@@ -147,6 +147,19 @@ export interface PerformanceSnapshot {
   createdAtUtc: string;
 }
 
+export type EmploymentType = "full_time" | "part_time" | "contractor";
+
+export interface StaffDirectoryRecord {
+  staffId: string;
+  fullName: string;
+  externalCode: string | null;
+  employmentType: EmploymentType | null;
+  annualSalaryCents: number | null;
+  hourlyRateCents: number | null;
+  currency: "USD";
+  updatedAtUtc: string | null;
+}
+
 export interface AuditLogEntry {
   id: string;
   actorUserId: string;

@@ -8,7 +8,7 @@ import {
 } from "jose";
 
 import { isPostgresConfigured, querySystem } from "@/lib/db/postgres";
-import { unauthorized, forbidden } from "@/lib/domain/errors";
+import { unauthorized, forbidden, conflict } from "@/lib/domain/errors";
 import type { SessionUser, UserRole } from "@/lib/domain/types";
 
 interface VerifiedToken {
@@ -283,7 +283,10 @@ async function assertCoreAccessModel(source: "startup" | "request"): Promise<voi
   if (!isPostgresConfigured()) {
     const keys = Object.keys(memoryEmployeeProvisioning);
     if (keys.length !== 3) {
-      const error = new Error("Core access model violation: exactly 3 active accounts are required.");
+      const error =
+        source === "request"
+          ? conflict("Core access model violation: exactly 3 active accounts are required.")
+          : new Error("Core access model violation: exactly 3 active accounts are required.");
       if (process.env.NODE_ENV === "production") {
         throw error;
       }
@@ -305,7 +308,10 @@ async function assertCoreAccessModel(source: "startup" | "request"): Promise<voi
   );
 
   if (rows.length !== 3) {
-    const error = new Error("Core access model violation: exactly 3 active accounts are required.");
+    const error =
+      source === "request"
+        ? conflict("Core access model violation: exactly 3 active accounts are required.")
+        : new Error("Core access model violation: exactly 3 active accounts are required.");
     if (process.env.NODE_ENV === "production") {
       throw error;
     }
@@ -318,7 +324,10 @@ async function assertCoreAccessModel(source: "startup" | "request"): Promise<voi
 
   for (const row of rows) {
     if (row.role !== "owner" && row.role !== "hr" && row.role !== "cto") {
-      const error = new Error("Core access model violation: invalid role detected outside owner/hr/cto.");
+      const error =
+        source === "request"
+          ? conflict("Core access model violation: invalid role detected outside owner/hr/cto.")
+          : new Error("Core access model violation: invalid role detected outside owner/hr/cto.");
       if (process.env.NODE_ENV === "production") {
         throw error;
       }
@@ -374,9 +383,14 @@ async function assertSessionNotRevoked(orgId: string, userId: string, jti: strin
   }
 }
 
-export async function getSessionUser(request: Request): Promise<SessionUser> {
+export async function getSessionUser(
+  request: Request,
+  options?: { allowCoreAccessViolation?: boolean },
+): Promise<SessionUser> {
   assertAuthWiringAtStartup();
-  await assertCoreAccessModel("request");
+  if (!options?.allowCoreAccessViolation) {
+    await assertCoreAccessModel("request");
+  }
   const verified = await verifyWithRefresh(request);
   const userId = verified.payload.sub;
 

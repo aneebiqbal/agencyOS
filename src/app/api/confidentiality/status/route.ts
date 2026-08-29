@@ -4,7 +4,7 @@ import { getLatestConfidentialityNotice, hasAcknowledgedConfidentiality } from "
 
 export async function GET(request: Request) {
   try {
-    const actor = await getSessionUser(request);
+    const actor = await getSessionUser(request, { allowCoreAccessViolation: true });
     const notice = await getLatestConfidentialityNotice(actor);
     if (!notice) {
       return jsonResponse(409, {
