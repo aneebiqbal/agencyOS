@@ -1,12 +1,15 @@
 import { getSessionUser } from "@/lib/auth";
 import { handleApiError, jsonResponse } from "@/lib/api";
-import { listPayrollRuns } from "@/lib/persistence";
+import { assertConfidentialityAcknowledged } from "@/lib/confidentiality";
+import { listPayrollRuns, logSensitiveView } from "@/lib/persistence";
 import { assertHasRole } from "@/lib/rbac";
 
 export async function GET(request: Request) {
   try {
-    const actor = getSessionUser(request);
-    assertHasRole(actor, ["owner", "finance"]);
+    const actor = await getSessionUser(request);
+    await assertConfidentialityAcknowledged(actor);
+    assertHasRole(actor, ["owner", "hr", "cto"]);
+    await logSensitiveView(actor, "payroll_runs", null);
     return jsonResponse(200, {
       ok: true,
       data: await listPayrollRuns(actor),

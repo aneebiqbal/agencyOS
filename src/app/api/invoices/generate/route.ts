@@ -1,5 +1,6 @@
 import { getSessionUser } from "@/lib/auth";
 import { handleApiError, jsonResponse, parseRequestBody } from "@/lib/api";
+import { assertConfidentialityAcknowledged } from "@/lib/confidentiality";
 import { findProjectById, generateInvoiceFromProjectTime, isProjectMember } from "@/lib/persistence";
 import { forbidden, notFound } from "@/lib/domain/errors";
 import { canAccessProject } from "@/lib/rbac";
@@ -8,7 +9,8 @@ import { generateInvoiceSchema } from "@/lib/validation";
 
 export async function POST(request: Request) {
   try {
-    const actor = getSessionUser(request);
+    const actor = await getSessionUser(request);
+    await assertConfidentialityAcknowledged(actor);
     assertWithinRateLimit(`${actor.userId}:POST:/api/invoices/generate`);
     const payload = await parseRequestBody(request, generateInvoiceSchema);
     const project = await findProjectById(actor, payload.projectId);

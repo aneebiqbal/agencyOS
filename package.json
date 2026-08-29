@@ -9,11 +9,14 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "db:check-env": "node scripts/check-env.mjs",
     "db:migrate": "node scripts/run-migrations.mjs up",
     "db:migrate:down": "node scripts/run-migrations.mjs down",
     "db:seed:test": "node scripts/seed-test-data.mjs"
   },
   "dependencies": {
+    "dotenv": "^17.4.2",
+    "jose": "^6.2.10",
     "next": "16.3.3",
     "pg": "^8.23.0",
     "react": "19.2.8",

@@ -11,8 +11,8 @@ describe("/api/deals/:dealId/win", () => {
   it("marks deal won and creates project atomically", async () => {
     const request = new Request("http://localhost/api/deals/deal-test-1/win", {
       method: "POST",
-      headers: authHeaders("owner", "owner-1", { "content-type": "application/json" }),
-      body: JSON.stringify({ clientName: "Acme Corp", managerUserId: "manager-1" }),
+      headers: await authHeaders("owner", "owner-1", { "content-type": "application/json" }),
+      body: JSON.stringify({ clientName: "Acme Corp", managerUserId: "cto-1" }),
     });
 
     const response = await POST(request, { params: Promise.resolve({ dealId: "deal-test-1" }) });
@@ -22,7 +22,7 @@ describe("/api/deals/:dealId/win", () => {
   it("rejects invalid input", async () => {
     const request = new Request("http://localhost/api/deals/deal-test-1/win", {
       method: "POST",
-      headers: authHeaders("owner", "owner-1", { "content-type": "application/json" }),
+      headers: await authHeaders("owner", "owner-1", { "content-type": "application/json" }),
       body: JSON.stringify({ clientName: "", managerUserId: "" }),
     });
 
@@ -34,7 +34,7 @@ describe("/api/deals/:dealId/win", () => {
     const request = new Request("http://localhost/api/deals/deal-test-1/win", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ clientName: "Acme Corp", managerUserId: "manager-1" }),
+      body: JSON.stringify({ clientName: "Acme Corp", managerUserId: "cto-1" }),
     });
 
     const response = await POST(request, { params: Promise.resolve({ dealId: "deal-test-1" }) });

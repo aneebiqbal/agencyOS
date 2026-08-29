@@ -38,16 +38,17 @@ Agency OS is an internal business automation platform starter for agencies that 
 - `supabase/migrations_down/*`: paired down migrations for rollback
 - `db/seed/test_seed.sql`: explicit test-only seed data
 - `db/schema.sql`: schema reference snapshot
+- `src/app/api/admin/provision-user/route.ts`: owner-only core-user provisioning guard
+- `src/app/api/auth/signout/route.ts`: server-side session revocation
 - `tests/*`: Unit and route integration tests
 
-## Auth Assumption (MVP)
+## Auth Model
 
-Current route handlers use request headers:
-
-- `x-user-id`
-- `x-user-role` (`owner | finance | manager | employee`)
-
-Replace this with Supabase Auth or Clerk in production.
+- Every API request requires `Authorization: Bearer <access_token>`.
+- Session token is verified server-side using Supabase JWKS (`/auth/v1/.well-known/jwks.json`) with local key caching and key-rotation refetch-on-miss.
+- If access token is expired and refresh token is present (`x-refresh-token` or `sb-refresh-token` cookie), the API attempts refresh via Supabase Auth token endpoint.
+- If refresh fails or session is revoked, request is rejected with `401`.
+- Role is loaded from `app.employees` using verified `sub` user id. JWT role claim is ignored for authorization.
 
 ## Security Controls Included in Boilerplate
 
@@ -61,6 +62,7 @@ Replace this with Supabase Auth or Clerk in production.
 - Soft-delete fields on all financial/HR tables for historical integrity
 - DB-level CHECK constraints mirror app-layer validation
 - RLS enabled and forced on financial/HR tables
+- Role self-escalation blocked: profile updates cannot modify role
 
 ## Run Locally
 
@@ -111,6 +113,15 @@ Includes:
   - RLS bypass attempt returns no rows
   - audit log update attempt fails
   - transaction rollback on forced mid-transaction failure
+  - connection-pool actor isolation under concurrent authenticated requests
+  - session lifecycle checks (refresh + signout revocation)
+
+## Onboarding / Provisioning
+
+- Self-signup is not sufficient for access.
+- Agency OS is locked to exactly three core provisioned accounts: `owner`, `hr`, and `cto`.
+- `POST /api/admin/provision-user` rejects any role outside `{owner, hr, cto}` and rejects provisioning a fourth active account.
+- Until provisioned, authenticated users receive `403`.
 
 ## Rollback Plan
 
@@ -139,7 +150,7 @@ Note: for production rollbacks on financial systems, snapshot/restore safety che
 
 ## Phased Build Continuation
 
-1. Replace header auth with production auth provider and map identity to DB actor context
+1. Completed: JWT verification moved from shared secret to Supabase JWKS endpoint cache
 2. Add queue/retry workers for invoice delivery and webhook ingestion
 3. Add human approval gates for invoice send/reimbursement release
 4. Add provider integration clients (Gusto/Deel/Rippling) for summary sync

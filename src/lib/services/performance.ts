@@ -5,21 +5,9 @@ export function listPerformanceSnapshotsForActor(
   store: DataStore,
   actor: SessionUser,
 ): PerformanceSnapshot[] {
-  if (actor.role === "owner" || actor.role === "finance") {
+  if (actor.role === "owner" || actor.role === "hr" || actor.role === "cto") {
     return store.getState().performanceSnapshots;
   }
 
-  if (actor.role === "manager") {
-    const managedEmployeeIds = store
-      .getState()
-      .employees.filter((employee) => employee.managerUserId === actor.userId)
-      .map((employee) => employee.userId);
-    return store
-      .getState()
-      .performanceSnapshots.filter((item) => managedEmployeeIds.includes(item.employeeUserId));
-  }
-
-  return store
-    .getState()
-    .performanceSnapshots.filter((item) => item.employeeUserId === actor.userId);
+  return [];
 }

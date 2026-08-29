@@ -33,8 +33,8 @@ import {
 } from "@/lib/services/projects";
 import { createTimeEntry as createTimeEntryMemory } from "@/lib/services/time-entries";
 import { markDealWonAndCreateProject as winDealMemory } from "@/lib/services/deals";
+import type { ImportPreview } from "@/lib/import-pipeline";
 
-const FALLBACK_ORG_ID = process.env.DEFAULT_ORG_ID ?? "org-test-1";
 let memoryStore = createInMemoryStore();
 const INTERNAL_HOURLY_RATE_CENTS = 75;
 let postgresInitializedForTests = false;
@@ -49,7 +49,7 @@ function actorWithOrg(actor: SessionUser): ActorContext {
   return {
     userId: actor.userId,
     role: actor.role,
-    orgId: FALLBACK_ORG_ID,
+    orgId: actor.orgId,
   };
 }
 
@@ -720,6 +720,368 @@ export async function listAuditLogs(actor: SessionUser): Promise<AuditLogEntry[]
   })) as AuditLogEntry[];
 }
 
+export async function getLatestConfidentialityNotice(
+  actor: SessionUser,
+): Promise<{ version: string; noticeText: string } | null> {
+  if (!isPostgresConfigured()) {
+    return {
+      version: "v1",
+      noticeText: "PLACEHOLDER CONFIDENTIALITY NOTICE - REQUIRES LEGAL REVIEW",
+    };
+  }
+
+  const rows = await queryAsActor(
+    actorWithOrg(actor),
+    `select version, notice_text
+       from app.confidentiality_notice_versions
+      where deleted_at_utc is null
+      order by published_at_utc desc
+      limit 1`,
+  );
+  if (rows.length === 0) {
+    return null;
+  }
+  return {
+    version: String(rows[0].version),
+    noticeText: String(rows[0].notice_text),
+  };
+}
+
+export async function hasAcknowledgedConfidentiality(
+  actor: SessionUser,
+  version: string,
+): Promise<boolean> {
+  if (!isPostgresConfigured()) {
+    void actor;
+    void version;
+    return true;
+  }
+  const rows = await queryAsActor(
+    actorWithOrg(actor),
+    `select 1
+       from app.confidentiality_acknowledgements
+      where org_id = $1 and user_id = $2 and notice_version = $3 and deleted_at_utc is null
+      limit 1`,
+    [actor.orgId, actor.userId, version],
+  );
+  return rows.length > 0;
+}
+
+export async function acknowledgeConfidentiality(
+  actor: SessionUser,
+  version: string,
+): Promise<void> {
+  if (!isPostgresConfigured()) {
+    return;
+  }
+  await transactionAsActor(actorWithOrg(actor), async (client) => {
+    const id = randomUUID();
+    await client.query(
+      `insert into app.confidentiality_acknowledgements
+        (org_id, id, user_id, notice_version, acknowledged_at_utc, deleted_at_utc)
+       values ($1, $2, $3, $4, now(), null)`,
+      [actor.orgId, id, actor.userId, version],
+    );
+    await appendAuditLog(client, actorWithOrg(actor), "confidentiality.ack", "notice", version, null, {
+      version,
+      userId: actor.userId,
+    });
+  });
+}
+
+export async function logSensitiveView(
+  actor: SessionUser,
+  viewKey: string,
+  subjectId: string | null,
+): Promise<void> {
+  if (!isPostgresConfigured()) {
+    return;
+  }
+  await transactionAsActor(actorWithOrg(actor), async (client) => {
+    await client.query(
+      `insert into app.sensitive_view_events
+        (org_id, id, viewer_user_id, view_key, subject_id, viewed_at_utc, deleted_at_utc)
+       values ($1, $2, $3, $4, $5, now(), null)`,
+      [actor.orgId, randomUUID(), actor.userId, viewKey, subjectId],
+    );
+    await appendAuditLog(client, actorWithOrg(actor), "sensitive_view.open", "view", viewKey, null, {
+      subjectId,
+    });
+  });
+}
+
+export async function updateMyProfileDisplayName(
+  actor: SessionUser,
+  displayName: string,
+): Promise<{ userId: string; displayName: string | null }> {
+  if (!isPostgresConfigured()) {
+    return { userId: actor.userId, displayName };
+  }
+
+  const rows = await queryAsActor(
+    actorWithOrg(actor),
+    `insert into app.user_profiles (org_id, user_id, display_name, created_at_utc, updated_at_utc, deleted_at_utc)
+      values ($1, $2, $3, now(), now(), null)
+      on conflict (org_id, user_id)
+      do update set display_name = excluded.display_name, updated_at_utc = now()
+      returning user_id, display_name`,
+    [actor.orgId, actor.userId, displayName],
+  );
+
+  return {
+    userId: String(rows[0].user_id),
+    displayName: rows[0].display_name ? String(rows[0].display_name) : null,
+  };
+}
+
+export async function listStaffMembers(
+  actor: SessionUser,
+): Promise<Array<{ staffId: string; fullName: string }>> {
+  if (!isPostgresConfigured()) {
+    return [
+      { staffId: "staff-1", fullName: "Jordan Lee" },
+      { staffId: "staff-2", fullName: "Avery Stone" },
+      { staffId: "staff-3", fullName: "Morgan Diaz" },
+    ];
+  }
+  const rows = await queryAsActor(
+    actorWithOrg(actor),
+    "select staff_id, full_name from app.staff_members where deleted_at_utc is null order by full_name asc",
+  );
+  return rows.map((row) => ({ staffId: String(row.staff_id), fullName: String(row.full_name) }));
+}
+
+export async function listProjectNames(actor: SessionUser): Promise<string[]> {
+  const projects = await listProjects(actor);
+  return projects.map((project) => project.clientName);
+}
+
+export async function hasImportedFileHash(actor: SessionUser, hash: string): Promise<boolean> {
+  if (!isPostgresConfigured()) {
+    return false;
+  }
+  const rows = await queryAsActor(
+    actorWithOrg(actor),
+    `select 1 from app.import_batches
+      where org_id = $1 and file_hash_sha256 = $2 and deleted_at_utc is null and status = 'confirmed' and force_reimport = false
+      limit 1`,
+    [actor.orgId, hash],
+  );
+  return rows.length > 0;
+}
+
+export async function confirmImportBatch(
+  actor: SessionUser,
+  preview: ImportPreview,
+  decisions: {
+    forceReimport: boolean;
+    rowEmployeeLinks: Record<number, string>;
+    rowProjectDecisions: Record<number, { action: "use_existing" | "create_project" | "skip"; projectName?: string }>;
+  },
+): Promise<{ batchId: string; importedRows: number; flaggedRows: number; skippedRows: number }> {
+  if (!isPostgresConfigured()) {
+    return { batchId: randomUUID(), importedRows: 0, flaggedRows: preview.flaggedRows.length, skippedRows: preview.skippedRows.length };
+  }
+
+  const coreCtx = actorWithOrg(actor);
+  return transactionAsActor(coreCtx, async (client) => {
+    const existing = await client.query(
+      `select id from app.import_batches
+        where org_id = $1 and file_hash_sha256 = $2 and deleted_at_utc is null and status = 'confirmed' and force_reimport = false
+        limit 1`,
+      [actor.orgId, preview.fileHashSha256],
+    );
+    if (existing.rowCount && existing.rowCount > 0 && !decisions.forceReimport) {
+      throw conflict("This file hash was already imported. Use explicit force re-import to continue.");
+    }
+
+    if (preview.unmappedColumns.length > 0) {
+      throw badRequest("Cannot confirm import while unmapped columns remain.");
+    }
+
+    const batchId = randomUUID();
+    await client.query(
+      `insert into app.import_batches
+        (org_id, id, importer_user_id, source_filename, file_hash_sha256, force_reimport, total_rows, clean_rows, flagged_rows, skipped_rows, imported_rows, status, deleted_at_utc)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, 'confirmed', null)`,
+      [
+        actor.orgId,
+        batchId,
+        actor.userId,
+        preview.sourceFilename,
+        preview.fileHashSha256,
+        decisions.forceReimport,
+        preview.totals.total,
+        preview.totals.clean,
+        preview.totals.flagged,
+        preview.totals.skipped,
+      ],
+    );
+
+    let importedRows = 0;
+
+    const allRows = [...preview.cleanRows, ...preview.flaggedRows, ...preview.skippedRows].sort(
+      (a, b) => a.rowNumber - b.rowNumber,
+    );
+
+    for (const row of allRows) {
+      const hardFlags = row.flags.filter((flag) => flag.requiresHuman);
+      let status: "clean" | "flagged" | "skipped" | "imported" = row.flags.length === 0 ? "clean" : "flagged";
+      let createdTimeEntryId: string | null = null;
+      let createdExpenseId: string | null = null;
+
+      const chosenEmployee = decisions.rowEmployeeLinks[row.rowNumber] ?? row.normalized.employeeId;
+      const projectDecision = decisions.rowProjectDecisions[row.rowNumber];
+
+      if (hardFlags.length > 0 && (!chosenEmployee || !projectDecision)) {
+        status = "skipped";
+      } else if (row.rowType === "time_entry" && row.normalized.hours !== null && row.normalized.dateUtc && chosenEmployee) {
+        const projectName =
+          projectDecision?.action === "create_project"
+            ? projectDecision.projectName ?? row.normalized.projectName
+            : row.normalized.projectName;
+        if (!projectName) {
+          status = "skipped";
+        } else {
+          const projectRow = await client.query(
+            "select id from app.projects where org_id = $1 and lower(client_name) = lower($2) and deleted_at_utc is null limit 1",
+            [actor.orgId, projectName],
+          );
+          let projectId = projectRow.rowCount && projectRow.rows[0]?.id ? String(projectRow.rows[0].id) : null;
+          if (!projectId && projectDecision?.action === "create_project") {
+            projectId = randomUUID();
+            await client.query(
+              `insert into app.projects
+                (org_id, id, client_name, budget_cents, billing_model, status, created_by_user_id, manager_user_id, version, created_at_utc, updated_at_utc, deleted_at_utc)
+               values ($1, $2, $3, 0, 'hourly', 'draft', $4, $4, 1, now(), now(), null)`,
+              [actor.orgId, projectId, projectName, actor.userId],
+            );
+          }
+
+          if (!projectId) {
+            status = "skipped";
+          } else {
+            createdTimeEntryId = randomUUID();
+            await client.query(
+              `insert into app.time_entries
+                (org_id, id, employee_user_id, project_id, hours, billable, description, work_date_utc, billed_invoice_id, import_batch_id, voided_at_utc, void_reason, created_at_utc, deleted_at_utc)
+               values ($1, $2, $3, $4, $5, true, $6, $7::timestamptz, null, $8, null, null, now(), null)`,
+              [
+                actor.orgId,
+                createdTimeEntryId,
+                chosenEmployee,
+                projectId,
+                row.normalized.hours,
+                row.normalized.description,
+                row.normalized.dateUtc,
+                batchId,
+              ],
+            );
+            importedRows += 1;
+            status = "imported";
+          }
+        }
+      } else if (row.rowType === "expense" && row.normalized.amountCents !== null && row.normalized.dateUtc && chosenEmployee) {
+        createdExpenseId = randomUUID();
+        await client.query(
+          `insert into app.expenses
+            (org_id, id, employee_user_id, category, amount_cents, approver_user_id, receipt_url, status, incurred_at_utc, import_batch_id, voided_at_utc, void_reason, created_at_utc, deleted_at_utc)
+           values ($1, $2, $3, $4, $5, $6, '', 'approved', $7::timestamptz, $8, null, null, now(), null)`,
+          [
+            actor.orgId,
+            createdExpenseId,
+            chosenEmployee,
+            (row.normalized.category ?? "other") as Expense["category"],
+            row.normalized.amountCents,
+            actor.userId,
+            row.normalized.dateUtc,
+            batchId,
+          ],
+        );
+        importedRows += 1;
+        status = "imported";
+      }
+
+      await client.query(
+        `insert into app.import_batch_rows
+          (org_id, id, batch_id, row_number, status, row_kind, raw_json, normalized_json, flags_json, created_time_entry_id, created_expense_id, deleted_at_utc)
+         values ($1, $2, $3, $4, $5::app.import_row_status, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11, null)`,
+        [
+          actor.orgId,
+          randomUUID(),
+          batchId,
+          row.rowNumber,
+          status,
+          row.rowType,
+          JSON.stringify(row.raw),
+          JSON.stringify(row.normalized),
+          JSON.stringify(row.flags),
+          createdTimeEntryId,
+          createdExpenseId,
+        ],
+      );
+    }
+
+    await client.query(
+      "update app.import_batches set imported_rows = $3 where org_id = $1 and id = $2",
+      [actor.orgId, batchId, importedRows],
+    );
+
+    await appendAuditLog(client, coreCtx, "import_batch.confirm", "import_batch", batchId, null, {
+      sourceFilename: preview.sourceFilename,
+      hash: preview.fileHashSha256,
+      importedRows,
+    });
+
+    return {
+      batchId,
+      importedRows,
+      flaggedRows: preview.flaggedRows.length,
+      skippedRows: preview.totals.total - importedRows,
+    };
+  });
+}
+
+export async function undoImportBatch(
+  actor: SessionUser,
+  batchId: string,
+  reason: string,
+): Promise<void> {
+  if (!isPostgresConfigured()) {
+    return;
+  }
+
+  const ctx = actorWithOrg(actor);
+  await transactionAsActor(ctx, async (client) => {
+    const batch = await client.query(
+      "select id from app.import_batches where org_id = $1 and id = $2 and status = 'confirmed' and deleted_at_utc is null",
+      [actor.orgId, batchId],
+    );
+    if (batch.rowCount === 0) {
+      throw notFound("Import batch not found.");
+    }
+
+    await client.query(
+      "update app.time_entries set voided_at_utc = now(), void_reason = $3 where org_id = $1 and import_batch_id = $2 and deleted_at_utc is null",
+      [actor.orgId, batchId, reason],
+    );
+    await client.query(
+      "update app.expenses set voided_at_utc = now(), void_reason = $3 where org_id = $1 and import_batch_id = $2 and deleted_at_utc is null",
+      [actor.orgId, batchId, reason],
+    );
+    await client.query(
+      "update app.import_batch_rows set status = 'voided' where org_id = $1 and batch_id = $2 and deleted_at_utc is null",
+      [actor.orgId, batchId],
+    );
+    await client.query(
+      "update app.import_batches set status = 'voided', voided_at_utc = now(), void_reason = $3 where org_id = $1 and id = $2",
+      [actor.orgId, batchId, reason],
+    );
+
+    await appendAuditLog(client, ctx, "import_batch.undo", "import_batch", batchId, null, { reason });
+  });
+}
+
 export async function resetPersistenceForTests(): Promise<void> {
   if (!isPostgresConfigured()) {
     memoryStore = createInMemoryStore();
@@ -743,6 +1105,7 @@ export async function resetPersistenceForTests(): Promise<void> {
   await querySystem(`
     truncate table
       app.idempotency_keys,
+      app.revoked_sessions,
       app.audit_log_entries,
       app.invoice_line_items,
       app.time_entries,
@@ -752,6 +1115,7 @@ export async function resetPersistenceForTests(): Promise<void> {
       app.deals,
       app.projects,
       app.performance_snapshots,
+      app.user_profiles,
       app.payroll_runs,
       app.leads,
       app.employees,
@@ -761,56 +1125,82 @@ export async function resetPersistenceForTests(): Promise<void> {
   `);
 
   await querySystem(
-    `insert into app.organizations (id, name, deleted_at_utc) values ('org-test-1', 'TEST ORG ONE', null), ('org-test-2', 'TEST ORG TWO', null)`,
+    `insert into app.organizations (id, name, deleted_at_utc) values ('org-core-1', 'AGENCY CORE ORG', null)`,
   );
 
   await querySystem(
-    `insert into app.employees (org_id, user_id, role, manager_user_id, payroll_provider_ref, deleted_at_utc)
+    `insert into app.employees (org_id, user_id, role, email, full_name, deleted_at_utc)
      values
-      ('org-test-1', 'owner-1', 'owner', null, 'prov-owner-1', null),
-      ('org-test-1', 'finance-1', 'finance', 'owner-1', 'prov-finance-1', null),
-      ('org-test-1', 'manager-1', 'manager', 'owner-1', 'prov-manager-1', null),
-      ('org-test-1', 'employee-1', 'employee', 'manager-1', 'prov-employee-1', null),
-      ('org-test-1', 'employee-2', 'employee', 'manager-1', 'prov-employee-2', null),
-      ('org-test-2', 'employee-3', 'employee', null, 'prov-employee-3', null)`,
+      ('org-core-1', 'owner-1', 'owner', 'owner@agency.local', 'Owner Account', null),
+      ('org-core-1', 'hr-1', 'hr', 'hr@agency.local', 'HR Account', null),
+      ('org-core-1', 'cto-1', 'cto', 'cto@agency.local', 'CTO Account', null)`,
+  );
+
+  await querySystem(
+    `insert into app.staff_members (org_id, staff_id, full_name, external_code, deleted_at_utc)
+     values
+      ('org-core-1', 'staff-1', 'Jordan Lee', 'EMP-001', null),
+      ('org-core-1', 'staff-2', 'Avery Stone', 'EMP-002', null),
+      ('org-core-1', 'staff-3', 'Morgan Diaz', 'EMP-003', null)`,
   );
 
   const now = new Date().toISOString();
   await querySystem(
     `insert into app.leads (org_id, id, source, stage, value_estimate_cents, owner_user_id, created_at_utc, updated_at_utc, deleted_at_utc)
-     values ('org-test-1', 'lead-test-1', 'inbound-web', 'proposal', 150000, 'owner-1', $1::timestamptz, $1::timestamptz, null)`,
+     values ('org-core-1', 'lead-test-1', 'inbound-web', 'proposal', 150000, 'owner-1', $1::timestamptz, $1::timestamptz, null)`,
     [now],
   );
 
   await querySystem(
     `insert into app.deals (org_id, id, lead_id, pricing_model, value_cents, stage, close_date_utc, won_by_user_id, project_id, version, created_at_utc, updated_at_utc, deleted_at_utc)
-     values ('org-test-1', 'deal-test-1', 'lead-test-1', 'hourly', 500000, 'open', null, null, null, 1, $1::timestamptz, $1::timestamptz, null)`,
+     values ('org-core-1', 'deal-test-1', 'lead-test-1', 'hourly', 500000, 'open', null, null, null, 1, $1::timestamptz, $1::timestamptz, null)`,
     [now],
   );
 
   await querySystem(
     `insert into app.projects (org_id, id, client_name, budget_cents, billing_model, status, created_by_user_id, manager_user_id, version, created_at_utc, updated_at_utc, deleted_at_utc)
-     values ('org-test-1', 'project-test-1', 'TEST CLIENT', 300000, 'hourly', 'active', 'owner-1', 'manager-1', 1, $1::timestamptz, $1::timestamptz, null),
-            ('org-test-2', 'project-test-2', 'OTHER ORG PROJECT', 100000, 'hourly', 'active', 'employee-3', 'employee-3', 1, $1::timestamptz, $1::timestamptz, null)`,
+     values ('org-core-1', 'project-test-1', 'TEST CLIENT', 300000, 'hourly', 'active', 'owner-1', 'cto-1', 1, $1::timestamptz, $1::timestamptz, null)`,
     [now],
   );
 
   await querySystem(
     `insert into app.project_members (org_id, project_id, user_id, created_at_utc, deleted_at_utc)
-     values ('org-test-1', 'project-test-1', 'manager-1', $1::timestamptz, null),
-            ('org-test-1', 'project-test-1', 'employee-1', $1::timestamptz, null),
-            ('org-test-2', 'project-test-2', 'employee-3', $1::timestamptz, null)`,
+     values ('org-core-1', 'project-test-1', 'owner-1', $1::timestamptz, null),
+            ('org-core-1', 'project-test-1', 'hr-1', $1::timestamptz, null),
+            ('org-core-1', 'project-test-1', 'cto-1', $1::timestamptz, null)`,
     [now],
   );
 
   await querySystem(
     `insert into app.payroll_runs (org_id, id, period_start_utc, period_end_utc, provider_ref_id, status, total_cost_cents, deleted_at_utc)
-     values ('org-test-1', 'payroll-summary-test-1', '2026-08-01T00:00:00.000Z'::timestamptz, '2026-08-15T23:59:59.999Z'::timestamptz, 'provider-run-123', 'completed', 120000, null)`,
+     values ('org-core-1', 'payroll-summary-test-1', '2026-08-01T00:00:00.000Z'::timestamptz, '2026-08-15T23:59:59.999Z'::timestamptz, 'provider-run-123', 'completed', 120000, null)`,
   );
 
   await querySystem(
     `insert into app.performance_snapshots (org_id, id, employee_user_id, period_start_utc, period_end_utc, utilization_percent, on_time_delivery_percent, attributable_revenue_cents, created_at_utc, deleted_at_utc)
-     values ('org-test-1', 'performance-test-1', 'employee-1', '2026-08-01T00:00:00.000Z'::timestamptz, '2026-08-15T23:59:59.999Z'::timestamptz, 72, 90, 220000, $1::timestamptz, null)`,
+     values ('org-core-1', 'performance-test-1', 'staff-1', '2026-08-01T00:00:00.000Z'::timestamptz, '2026-08-15T23:59:59.999Z'::timestamptz, 72, 90, 220000, $1::timestamptz, null)`,
+    [now],
+  );
+
+  await querySystem(
+    `insert into app.user_profiles (org_id, user_id, display_name, created_at_utc, updated_at_utc, deleted_at_utc)
+     values ('org-core-1', 'owner-1', 'Owner One', $1::timestamptz, $1::timestamptz, null),
+            ('org-core-1', 'hr-1', 'HR One', $1::timestamptz, $1::timestamptz, null),
+            ('org-core-1', 'cto-1', 'CTO One', $1::timestamptz, $1::timestamptz, null)`,
+    [now],
+  );
+
+  await querySystem(
+    `insert into app.confidentiality_notice_versions (version, notice_text, deleted_at_utc)
+     values ('v1', 'PLACEHOLDER CONFIDENTIALITY NOTICE - REQUIRES LEGAL REVIEW', null)`,
+  );
+
+  await querySystem(
+    `insert into app.confidentiality_acknowledgements (org_id, id, user_id, notice_version, acknowledged_at_utc, deleted_at_utc)
+     values
+      ('org-core-1', 'ack-owner-1', 'owner-1', 'v1', $1::timestamptz, null),
+      ('org-core-1', 'ack-hr-1', 'hr-1', 'v1', $1::timestamptz, null),
+      ('org-core-1', 'ack-cto-1', 'cto-1', 'v1', $1::timestamptz, null)`,
     [now],
   );
 }

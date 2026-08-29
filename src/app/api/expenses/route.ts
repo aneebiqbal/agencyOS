@@ -1,6 +1,6 @@
 import { getSessionUser } from "@/lib/auth";
 import { handleApiError, jsonResponse, parseRequestBody } from "@/lib/api";
-import { forbidden } from "@/lib/domain/errors";
+import { assertConfidentialityAcknowledged } from "@/lib/confidentiality";
 import { requireIdempotencyKey } from "@/lib/idempotency";
 import { createExpense } from "@/lib/persistence";
 import { assertHasRole } from "@/lib/rbac";
@@ -9,14 +9,12 @@ import { createExpenseSchema } from "@/lib/validation";
 
 export async function POST(request: Request) {
   try {
-    const actor = getSessionUser(request);
-    assertHasRole(actor, ["owner", "finance", "manager", "employee"]);
+    const actor = await getSessionUser(request);
+    await assertConfidentialityAcknowledged(actor);
+    assertHasRole(actor, ["owner", "hr", "cto"]);
     assertWithinRateLimit(`${actor.userId}:POST:/api/expenses`);
     const idempotencyKey = requireIdempotencyKey(request);
     const payload = await parseRequestBody(request, createExpenseSchema);
-    if (actor.role === "employee" && payload.employeeUserId !== actor.userId) {
-      throw forbidden("Employees may only submit their own expenses.");
-    }
     const createdResult = await createExpense(actor, payload, idempotencyKey);
     return jsonResponse(createdResult.status, createdResult.body);
   } catch (error) {

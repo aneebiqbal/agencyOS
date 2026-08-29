@@ -11,7 +11,7 @@ describe("/api/leads", () => {
   it("accepts valid lead creation", async () => {
     const request = new Request("http://localhost/api/leads", {
       method: "POST",
-      headers: authHeaders("owner", "owner-1", { "content-type": "application/json" }),
+      headers: await authHeaders("owner", "owner-1", { "content-type": "application/json" }),
       body: JSON.stringify({
         source: "referral",
         stage: "new",
@@ -30,7 +30,7 @@ describe("/api/leads", () => {
   it("rejects invalid lead payload", async () => {
     const request = new Request("http://localhost/api/leads", {
       method: "POST",
-      headers: authHeaders("owner", "owner-1", { "content-type": "application/json" }),
+      headers: await authHeaders("owner", "owner-1", { "content-type": "application/json" }),
       body: JSON.stringify({ source: "bad-source" }),
     });
 

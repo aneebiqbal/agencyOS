@@ -1,5 +1,6 @@
 import { getSessionUser } from "@/lib/auth";
 import { handleApiError, jsonResponse, parseRequestBody } from "@/lib/api";
+import { assertConfidentialityAcknowledged } from "@/lib/confidentiality";
 import { markDealWonAndCreateProject } from "@/lib/persistence";
 import { assertHasRole } from "@/lib/rbac";
 import { assertWithinRateLimit } from "@/lib/rate-limit";
@@ -10,8 +11,9 @@ export async function POST(
   context: { params: Promise<{ dealId: string }> },
 ) {
   try {
-    const actor = getSessionUser(request);
-    assertHasRole(actor, ["owner", "manager"]);
+    const actor = await getSessionUser(request);
+    await assertConfidentialityAcknowledged(actor);
+    assertHasRole(actor, ["owner", "hr", "cto"]);
     assertWithinRateLimit(`${actor.userId}:POST:/api/deals/win`);
     const payload = await parseRequestBody(request, winDealSchema);
     const { dealId } = await context.params;

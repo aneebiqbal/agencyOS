@@ -1,5 +1,6 @@
 import { getSessionUser } from "@/lib/auth";
 import { handleApiError, jsonResponse, parseRequestBody } from "@/lib/api";
+import { assertConfidentialityAcknowledged } from "@/lib/confidentiality";
 import { forbidden, notFound } from "@/lib/domain/errors";
 import { findProjectById, isProjectMember, updateProjectBudget } from "@/lib/persistence";
 import { canAccessProject } from "@/lib/rbac";
@@ -11,7 +12,8 @@ export async function PATCH(
   context: { params: Promise<{ projectId: string }> },
 ) {
   try {
-    const actor = getSessionUser(request);
+    const actor = await getSessionUser(request);
+    await assertConfidentialityAcknowledged(actor);
     assertWithinRateLimit(`${actor.userId}:PATCH:/api/projects/budget`);
     const payload = await parseRequestBody(request, updateProjectBudgetSchema);
     const { projectId } = await context.params;

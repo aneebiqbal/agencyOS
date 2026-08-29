@@ -2,7 +2,7 @@ import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
 export interface DbActorContext {
   userId: string;
-  role: "owner" | "finance" | "manager" | "employee";
+  role: "owner" | "hr" | "cto";
   orgId: string;
 }
 

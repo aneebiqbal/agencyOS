@@ -11,15 +11,15 @@ describe("/api/expenses", () => {
   it("creates a valid expense", async () => {
     const request = new Request("http://localhost/api/expenses", {
       method: "POST",
-      headers: authHeaders("employee", "employee-1", {
+      headers: await authHeaders("hr", "hr-1", {
         "content-type": "application/json",
         "idempotency-key": "idem-exp-1",
       }),
       body: JSON.stringify({
-        employeeUserId: "employee-1",
+        employeeUserId: "owner-1",
         category: "software",
         amountCents: 1299,
-        approverUserId: "manager-1",
+        approverUserId: "cto-1",
         receiptUrl: "https://example.com/receipt-1",
         incurredAtUtc: "2026-08-10T12:00:00.000Z",
       }),
@@ -31,15 +31,15 @@ describe("/api/expenses", () => {
   it("rejects invalid payload", async () => {
     const request = new Request("http://localhost/api/expenses", {
       method: "POST",
-      headers: authHeaders("employee", "employee-1", {
+      headers: await authHeaders("hr", "hr-1", {
         "content-type": "application/json",
         "idempotency-key": "idem-exp-2",
       }),
       body: JSON.stringify({
-        employeeUserId: "employee-1",
+        employeeUserId: "owner-1",
         category: "software",
         amountCents: -30,
-        approverUserId: "manager-1",
+        approverUserId: "cto-1",
         receiptUrl: "not-a-url",
         incurredAtUtc: "2026-08-10T12:00:00.000Z",
       }),
@@ -56,10 +56,10 @@ describe("/api/expenses", () => {
         "idempotency-key": "idem-exp-3",
       },
       body: JSON.stringify({
-        employeeUserId: "employee-1",
+        employeeUserId: "owner-1",
         category: "software",
         amountCents: 50,
-        approverUserId: "manager-1",
+        approverUserId: "cto-1",
         receiptUrl: "https://example.com/receipt-3",
         incurredAtUtc: "2026-08-10T12:00:00.000Z",
       }),

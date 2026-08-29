@@ -7,13 +7,8 @@ export function assertHasRole(user: SessionUser, allowed: UserRole[]): void {
   }
 }
 
-export function canAccessProject(user: SessionUser, project: Project, isMember: boolean): boolean {
-  if (user.role === "owner" || user.role === "finance") {
-    return true;
-  }
-  if (user.role === "manager") {
-    return project.managerUserId === user.userId || isMember;
-  }
-
-  return isMember;
+export function canAccessProject(user: SessionUser, _project: Project, _isMember: boolean): boolean {
+  void _project;
+  void _isMember;
+  return user.role === "owner" || user.role === "hr" || user.role === "cto";
 }

@@ -12,7 +12,7 @@ describe("/api/projects and /api/projects/:projectId/budget", () => {
   it("returns visible projects for a valid user", async () => {
     const request = new Request("http://localhost/api/projects", {
       method: "GET",
-      headers: authHeaders("manager", "manager-1"),
+      headers: await authHeaders("cto", "cto-1"),
     });
     const response = await GET(request);
     expect(response.status).toBe(200);
@@ -21,7 +21,7 @@ describe("/api/projects and /api/projects/:projectId/budget", () => {
   it("rejects invalid budget update payload", async () => {
     const request = new Request("http://localhost/api/projects/project-test-1/budget", {
       method: "PATCH",
-      headers: authHeaders("manager", "manager-1", { "content-type": "application/json" }),
+      headers: await authHeaders("cto", "cto-1", { "content-type": "application/json" }),
       body: JSON.stringify({ budgetCents: -1, expectedVersion: 1 }),
     });
     const response = await PATCH(request, { params: Promise.resolve({ projectId: "project-test-1" }) });

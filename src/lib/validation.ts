@@ -47,3 +47,40 @@ export const financeSummaryQuerySchema = z.object({
   fromUtc: z.string().regex(isoUtcDatePattern),
   toUtc: z.string().regex(isoUtcDatePattern),
 });
+
+export const updateProfileSchema = z.object({
+  displayName: z.string().trim().min(1).max(120).optional(),
+  role: z.enum(["owner", "hr", "cto"]).optional(),
+});
+
+export const provisionUserSchema = z.object({
+  userId: z.string().trim().min(1),
+  role: z.enum(["owner", "hr", "cto"]),
+  email: z.email(),
+  fullName: z.string().trim().min(1).max(120),
+});
+
+export const importPreviewSchema = z.object({
+  sourceFilename: z.string().trim().min(1),
+  csvBase64: z.string().min(1),
+  mappingOverrides: z.record(z.string(), z.string()).optional(),
+});
+
+export const importConfirmSchema = z.object({
+  previewId: z.string().uuid(),
+  forceReimport: z.boolean().default(false),
+  rowEmployeeLinks: z.record(z.string(), z.string()).default({}),
+  rowProjectDecisions: z
+    .record(
+      z.string(),
+      z.object({
+        action: z.enum(["use_existing", "create_project", "skip"]),
+        projectName: z.string().optional(),
+      }),
+    )
+    .default({}),
+});
+
+export const importUndoSchema = z.object({
+  reason: z.string().trim().min(5).max(500),
+});

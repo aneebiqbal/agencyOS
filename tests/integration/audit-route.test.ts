@@ -11,7 +11,7 @@ describe("/api/audit-logs", () => {
   it("returns audit logs for authorized role", async () => {
     const request = new Request("http://localhost/api/audit-logs", {
       method: "GET",
-      headers: authHeaders("owner", "owner-1"),
+      headers: await authHeaders("owner", "owner-1"),
     });
     const response = await GET(request);
     expect(response.status).toBe(200);
@@ -20,7 +20,7 @@ describe("/api/audit-logs", () => {
   it("rejects role without permission", async () => {
     const request = new Request("http://localhost/api/audit-logs", {
       method: "GET",
-      headers: authHeaders("employee", "employee-1"),
+      headers: await authHeaders("unknown", "unknown-user"),
     });
     const response = await GET(request);
     expect(response.status).toBe(403);

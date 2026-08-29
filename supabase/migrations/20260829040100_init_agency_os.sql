@@ -1,6 +1,6 @@
 create schema if not exists app;
 
-create type app.user_role as enum ('owner', 'finance', 'manager', 'employee');
+create type app.user_role as enum ('owner', 'hr', 'cto');
 create type app.lead_source as enum ('referral', 'inbound-web', 'outbound', 'marketplace', 'other');
 create type app.lead_stage as enum ('new', 'qualified', 'proposal', 'won', 'lost');
 create type app.deal_pricing_model as enum ('hourly', 'fixed', 'retainer');
@@ -9,6 +9,7 @@ create type app.project_status as enum ('draft', 'active', 'completed', 'archive
 create type app.expense_category as enum ('rent', 'software', 'travel', 'other');
 create type app.expense_status as enum ('submitted', 'approved', 'reimbursed');
 create type app.invoice_status as enum ('draft', 'ready_for_review', 'approved', 'sent', 'paid', 'send_failed');
+create type app.import_row_status as enum ('clean', 'flagged', 'skipped', 'imported', 'voided');
 
 create or replace function app.current_user_id() returns text language sql stable as $$
   select coalesce(current_setting('app.current_user_id', true), '');
@@ -33,13 +34,65 @@ create table app.employees (
   org_id text not null references app.organizations(id),
   user_id text not null,
   role app.user_role not null,
-  manager_user_id text,
-  payroll_provider_ref text,
+  email text not null,
+  full_name text not null,
   created_at_utc timestamptz not null default now(),
   deleted_at_utc timestamptz,
   primary key (org_id, user_id),
-  foreign key (org_id, manager_user_id) references app.employees(org_id, user_id),
-  check (manager_user_id is null or manager_user_id <> user_id)
+  unique (org_id, role)
+);
+
+create table app.staff_members (
+  org_id text not null references app.organizations(id),
+  staff_id text not null,
+  full_name text not null,
+  external_code text,
+  created_at_utc timestamptz not null default now(),
+  deleted_at_utc timestamptz,
+  primary key (org_id, staff_id)
+);
+
+create table app.import_batches (
+  org_id text not null references app.organizations(id),
+  id text not null,
+  importer_user_id text not null,
+  source_filename text not null,
+  file_hash_sha256 text not null,
+  force_reimport boolean not null default false,
+  total_rows integer not null check (total_rows >= 0),
+  clean_rows integer not null check (clean_rows >= 0),
+  flagged_rows integer not null check (flagged_rows >= 0),
+  skipped_rows integer not null check (skipped_rows >= 0),
+  imported_rows integer not null check (imported_rows >= 0),
+  status text not null check (status in ('confirmed', 'voided')),
+  created_at_utc timestamptz not null default now(),
+  voided_at_utc timestamptz,
+  void_reason text,
+  deleted_at_utc timestamptz,
+  primary key (org_id, id),
+  foreign key (org_id, importer_user_id) references app.employees(org_id, user_id)
+);
+
+create unique index import_batches_unique_file_hash
+  on app.import_batches (org_id, file_hash_sha256)
+  where deleted_at_utc is null and status = 'confirmed' and force_reimport = false;
+
+create table app.import_batch_rows (
+  org_id text not null references app.organizations(id),
+  id text not null,
+  batch_id text not null,
+  row_number integer not null check (row_number > 0),
+  status app.import_row_status not null,
+  row_kind text not null check (row_kind in ('time_entry', 'expense')),
+  raw_json jsonb not null,
+  normalized_json jsonb,
+  flags_json jsonb,
+  created_time_entry_id text,
+  created_expense_id text,
+  created_at_utc timestamptz not null default now(),
+  deleted_at_utc timestamptz,
+  primary key (org_id, id),
+  foreign key (org_id, batch_id) references app.import_batches(org_id, id)
 );
 
 create table app.leads (
@@ -136,12 +189,16 @@ create table app.time_entries (
   description text not null,
   work_date_utc timestamptz not null,
   billed_invoice_id text,
+  import_batch_id text,
+  voided_at_utc timestamptz,
+  void_reason text,
   created_at_utc timestamptz not null,
   deleted_at_utc timestamptz,
   primary key (org_id, id),
-  foreign key (org_id, employee_user_id) references app.employees(org_id, user_id),
+  foreign key (org_id, employee_user_id) references app.staff_members(org_id, staff_id),
   foreign key (org_id, project_id) references app.projects(org_id, id),
-  foreign key (org_id, billed_invoice_id) references app.invoices(org_id, id)
+  foreign key (org_id, billed_invoice_id) references app.invoices(org_id, id),
+  foreign key (org_id, import_batch_id) references app.import_batches(org_id, id)
 );
 
 create table app.expenses (
@@ -154,11 +211,15 @@ create table app.expenses (
   receipt_url text not null,
   status app.expense_status not null,
   incurred_at_utc timestamptz not null,
+  import_batch_id text,
+  voided_at_utc timestamptz,
+  void_reason text,
   created_at_utc timestamptz not null,
   deleted_at_utc timestamptz,
   primary key (org_id, id),
-  foreign key (org_id, employee_user_id) references app.employees(org_id, user_id),
-  foreign key (org_id, approver_user_id) references app.employees(org_id, user_id)
+  foreign key (org_id, employee_user_id) references app.staff_members(org_id, staff_id),
+  foreign key (org_id, approver_user_id) references app.employees(org_id, user_id),
+  foreign key (org_id, import_batch_id) references app.import_batches(org_id, id)
 );
 
 create table app.invoice_line_items (
@@ -200,7 +261,7 @@ create table app.performance_snapshots (
   created_at_utc timestamptz not null,
   deleted_at_utc timestamptz,
   primary key (org_id, id),
-  foreign key (org_id, employee_user_id) references app.employees(org_id, user_id),
+  foreign key (org_id, employee_user_id) references app.staff_members(org_id, staff_id),
   check (period_start_utc <= period_end_utc)
 );
 
@@ -230,6 +291,57 @@ create table app.idempotency_keys (
   primary key (org_id, endpoint, idempotency_key)
 );
 
+create table app.revoked_sessions (
+  org_id text not null references app.organizations(id),
+  session_jti text not null,
+  user_id text not null,
+  revoked_at_utc timestamptz not null default now(),
+  expires_at_utc timestamptz not null,
+  deleted_at_utc timestamptz,
+  primary key (org_id, session_jti)
+);
+
+create table app.user_profiles (
+  org_id text not null references app.organizations(id),
+  user_id text not null,
+  display_name text,
+  created_at_utc timestamptz not null default now(),
+  updated_at_utc timestamptz not null default now(),
+  deleted_at_utc timestamptz,
+  primary key (org_id, user_id),
+  foreign key (org_id, user_id) references app.employees(org_id, user_id)
+);
+
+create table app.confidentiality_notice_versions (
+  version text primary key,
+  notice_text text not null,
+  published_at_utc timestamptz not null default now(),
+  deleted_at_utc timestamptz
+);
+
+create table app.confidentiality_acknowledgements (
+  org_id text not null references app.organizations(id),
+  id text not null,
+  user_id text not null,
+  notice_version text not null references app.confidentiality_notice_versions(version),
+  acknowledged_at_utc timestamptz not null default now(),
+  deleted_at_utc timestamptz,
+  primary key (org_id, id),
+  foreign key (org_id, user_id) references app.employees(org_id, user_id)
+);
+
+create table app.sensitive_view_events (
+  org_id text not null references app.organizations(id),
+  id text not null,
+  viewer_user_id text not null,
+  view_key text not null,
+  subject_id text,
+  viewed_at_utc timestamptz not null default now(),
+  deleted_at_utc timestamptz,
+  primary key (org_id, id),
+  foreign key (org_id, viewer_user_id) references app.employees(org_id, user_id)
+);
+
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'agency_app_role') then
@@ -237,6 +349,7 @@ begin
   end if;
 end
 $$;
+
 grant usage on schema app to agency_app_role;
 grant select, insert, update on all tables in schema app to agency_app_role;
 revoke delete on all tables in schema app from agency_app_role;
@@ -266,126 +379,44 @@ alter table app.performance_snapshots enable row level security;
 alter table app.performance_snapshots force row level security;
 alter table app.employees enable row level security;
 alter table app.employees force row level security;
+alter table app.staff_members enable row level security;
+alter table app.staff_members force row level security;
 alter table app.idempotency_keys enable row level security;
 alter table app.idempotency_keys force row level security;
+alter table app.revoked_sessions enable row level security;
+alter table app.revoked_sessions force row level security;
+alter table app.user_profiles enable row level security;
+alter table app.user_profiles force row level security;
+alter table app.import_batches enable row level security;
+alter table app.import_batches force row level security;
+alter table app.import_batch_rows enable row level security;
+alter table app.import_batch_rows force row level security;
+alter table app.confidentiality_acknowledgements enable row level security;
+alter table app.confidentiality_acknowledgements force row level security;
+alter table app.sensitive_view_events enable row level security;
+alter table app.sensitive_view_events force row level security;
 
-create policy employees_org_scope on app.employees
-  using (org_id = app.current_org_id())
-  with check (org_id = app.current_org_id());
-
-create policy leads_access on app.leads
-  using (org_id = app.current_org_id())
-  with check (org_id = app.current_org_id());
-
-create policy deals_access on app.deals
-  using (org_id = app.current_org_id())
-  with check (org_id = app.current_org_id());
-
-create policy projects_select_access on app.projects
-  for select using (
-    org_id = app.current_org_id()
-    and (
-      app.current_user_role() in ('owner', 'finance')
-      or manager_user_id = app.current_user_id()
-      or exists (
-        select 1 from app.project_members pm
-        where pm.org_id = projects.org_id
-          and pm.project_id = projects.id
-          and pm.user_id = app.current_user_id()
-          and pm.deleted_at_utc is null
-      )
-    )
-  );
-
-create policy projects_mutation_access on app.projects
-  for all using (
-    org_id = app.current_org_id()
-    and (
-      app.current_user_role() in ('owner', 'finance')
-      or manager_user_id = app.current_user_id()
-      or exists (
-        select 1 from app.project_members pm
-        where pm.org_id = projects.org_id
-          and pm.project_id = projects.id
-          and pm.user_id = app.current_user_id()
-          and pm.deleted_at_utc is null
-      )
-    )
-  )
-  with check (org_id = app.current_org_id());
-
-create policy project_members_access on app.project_members
-  using (org_id = app.current_org_id())
-  with check (org_id = app.current_org_id());
-
-create policy time_entries_access on app.time_entries
-  using (
-    org_id = app.current_org_id()
-    and (
-      app.current_user_role() in ('owner', 'finance', 'manager')
-      or employee_user_id = app.current_user_id()
-    )
-  )
-  with check (
-    org_id = app.current_org_id()
-    and (
-      app.current_user_role() in ('owner', 'finance', 'manager')
-      or employee_user_id = app.current_user_id()
-    )
-  );
-
-create policy expenses_access on app.expenses
-  using (
-    org_id = app.current_org_id()
-    and (
-      app.current_user_role() in ('owner', 'finance', 'manager')
-      or employee_user_id = app.current_user_id()
-    )
-  )
-  with check (
-    org_id = app.current_org_id()
-    and (
-      app.current_user_role() in ('owner', 'finance', 'manager')
-      or employee_user_id = app.current_user_id()
-    )
-  );
-
-create policy invoices_access on app.invoices
-  using (org_id = app.current_org_id())
-  with check (org_id = app.current_org_id());
-
-create policy invoice_line_items_access on app.invoice_line_items
-  using (org_id = app.current_org_id())
-  with check (org_id = app.current_org_id());
-
-create policy payroll_runs_finance_only on app.payroll_runs
-  using (org_id = app.current_org_id() and app.current_user_role() in ('owner', 'finance'))
-  with check (org_id = app.current_org_id() and app.current_user_role() in ('owner', 'finance'));
-
-create policy performance_access on app.performance_snapshots
-  using (
-    org_id = app.current_org_id() and (
-      app.current_user_role() in ('owner', 'finance')
-      or employee_user_id = app.current_user_id()
-      or exists (
-        select 1 from app.employees e
-        where e.org_id = performance_snapshots.org_id
-          and e.user_id = performance_snapshots.employee_user_id
-          and e.manager_user_id = app.current_user_id()
-      )
-    )
-  )
-  with check (org_id = app.current_org_id());
-
-create policy audit_logs_finance_owner on app.audit_log_entries
-  for select using (org_id = app.current_org_id() and app.current_user_role() in ('owner', 'finance'));
-
-create policy audit_logs_insert on app.audit_log_entries
-  for insert with check (org_id = app.current_org_id());
-
-create policy idempotency_access on app.idempotency_keys
-  using (org_id = app.current_org_id() and actor_user_id = app.current_user_id())
-  with check (org_id = app.current_org_id() and actor_user_id = app.current_user_id());
+create policy org_scoped_employees on app.employees using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_staff on app.staff_members using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_leads on app.leads using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_deals on app.deals using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_projects on app.projects using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_members on app.project_members using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_time on app.time_entries using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_expenses on app.expenses using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_invoices on app.invoices using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_invoice_lines on app.invoice_line_items using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_payroll on app.payroll_runs using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_performance on app.performance_snapshots using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_audit_select on app.audit_log_entries for select using (org_id = app.current_org_id());
+create policy org_scoped_audit_insert on app.audit_log_entries for insert with check (org_id = app.current_org_id());
+create policy org_scoped_idempotency on app.idempotency_keys using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_revoked on app.revoked_sessions using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_profiles on app.user_profiles using (org_id = app.current_org_id() and user_id = app.current_user_id()) with check (org_id = app.current_org_id() and user_id = app.current_user_id());
+create policy org_scoped_import_batch on app.import_batches using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_import_rows on app.import_batch_rows using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_conf_ack on app.confidentiality_acknowledgements using (org_id = app.current_org_id() and user_id = app.current_user_id()) with check (org_id = app.current_org_id() and user_id = app.current_user_id());
+create policy org_scoped_sensitive_view_events on app.sensitive_view_events using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
 
 revoke update, delete on app.audit_log_entries from public;
 revoke update, delete on app.audit_log_entries from agency_app_role;

@@ -1,4 +1,4 @@
-export type UserRole = "owner" | "finance" | "manager" | "employee";
+export type UserRole = "owner" | "hr" | "cto";
 
 export type LeadSource =
   | "referral"
@@ -28,6 +28,7 @@ export type InvoiceStatus =
 export interface SessionUser {
   userId: string;
   role: UserRole;
+  orgId: string;
 }
 
 export interface Lead {

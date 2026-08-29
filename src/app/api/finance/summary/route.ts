@@ -1,14 +1,17 @@
 import { getSessionUser } from "@/lib/auth";
 import { handleApiError, jsonResponse, parseQuery } from "@/lib/api";
+import { assertConfidentialityAcknowledged } from "@/lib/confidentiality";
 import { badRequest } from "@/lib/domain/errors";
-import { getFinanceSummary } from "@/lib/persistence";
+import { getFinanceSummary, logSensitiveView } from "@/lib/persistence";
 import { assertHasRole } from "@/lib/rbac";
 import { financeSummaryQuerySchema } from "@/lib/validation";
 
 export async function GET(request: Request) {
   try {
-    const actor = getSessionUser(request);
-    assertHasRole(actor, ["owner", "finance"]);
+    const actor = await getSessionUser(request);
+    await assertConfidentialityAcknowledged(actor);
+    await logSensitiveView(actor, "finance_summary", null);
+    assertHasRole(actor, ["owner", "hr", "cto"]);
     const query = parseQuery(new URL(request.url), financeSummaryQuerySchema);
     if (Date.parse(query.fromUtc) > Date.parse(query.toUtc)) {
       throw badRequest("fromUtc must be earlier than or equal to toUtc.");

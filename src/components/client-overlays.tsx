@@ -1,0 +1,21 @@
+"use client";
+
+import { usePathname } from "next/navigation";
+
+import { ConfidentialityGate } from "@/components/confidentiality-gate";
+import { WatermarkOverlay } from "@/components/watermark-overlay";
+
+export function ClientOverlays() {
+  const pathname = usePathname();
+
+  if (pathname === "/login") {
+    return null;
+  }
+
+  return (
+    <>
+      <ConfidentialityGate />
+      <WatermarkOverlay />
+    </>
+  );
+}

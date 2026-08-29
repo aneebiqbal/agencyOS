@@ -1,5 +1,6 @@
 import { getSessionUser } from "@/lib/auth";
 import { handleApiError, jsonResponse, parseRequestBody } from "@/lib/api";
+import { assertConfidentialityAcknowledged } from "@/lib/confidentiality";
 import { forbidden } from "@/lib/domain/errors";
 import { requireIdempotencyKey } from "@/lib/idempotency";
 import { createTimeEntry, findProjectById, isProjectMember } from "@/lib/persistence";
@@ -9,7 +10,8 @@ import { createTimeEntrySchema } from "@/lib/validation";
 
 export async function POST(request: Request) {
   try {
-    const actor = getSessionUser(request);
+    const actor = await getSessionUser(request);
+    await assertConfidentialityAcknowledged(actor);
     assertWithinRateLimit(`${actor.userId}:POST:/api/time-entries`);
     const idempotencyKey = requireIdempotencyKey(request);
     const payload = await parseRequestBody(request, createTimeEntrySchema);
@@ -22,10 +24,6 @@ export async function POST(request: Request) {
 
     if (!canAccessProject(actor, project, isMember)) {
       throw forbidden("Cannot log time against a project you cannot access.");
-    }
-
-    if (actor.role === "employee" && payload.employeeUserId !== actor.userId) {
-      throw forbidden("Employees may only submit time for themselves.");
     }
 
     const createdResult = await createTimeEntry(actor, payload, idempotencyKey);

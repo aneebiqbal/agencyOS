@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SessionControls } from "@/components/session-controls";
 
 interface ModuleShellProps {
   title: string;
@@ -10,11 +11,14 @@ export function ModuleShell({ title, description, endpoints }: ModuleShellProps)
   return (
     <div className="page-bg min-h-screen p-6 md:p-12">
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 rounded-2xl border border-border bg-surface p-6 md:p-8">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          <Link href="/" className="text-sm font-medium text-accent hover:text-accent-strong">
-            Back to Home
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/" className="text-sm font-medium text-accent hover:text-accent-strong">
+              Back to Home
+            </Link>
+            <SessionControls />
+          </div>
         </div>
 
         <p className="text-sm leading-6 text-zinc-700">{description}</p>

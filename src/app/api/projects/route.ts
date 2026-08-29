@@ -1,10 +1,12 @@
 import { getSessionUser } from "@/lib/auth";
 import { handleApiError, jsonResponse } from "@/lib/api";
+import { assertConfidentialityAcknowledged } from "@/lib/confidentiality";
 import { listProjects } from "@/lib/persistence";
 
 export async function GET(request: Request) {
   try {
-    const actor = getSessionUser(request);
+    const actor = await getSessionUser(request);
+    await assertConfidentialityAcknowledged(actor);
     const projects = await listProjects(actor);
 
     return jsonResponse(200, {

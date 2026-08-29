@@ -11,7 +11,7 @@ describe("/api/performance/snapshots", () => {
   it("returns actor-scoped metrics", async () => {
     const request = new Request("http://localhost/api/performance/snapshots", {
       method: "GET",
-      headers: authHeaders("employee", "employee-1"),
+      headers: await authHeaders("hr", "hr-1"),
     });
     const response = await GET(request);
     const body = await readJson(response);
@@ -22,13 +22,10 @@ describe("/api/performance/snapshots", () => {
   it("handles malformed auth role as invalid input", async () => {
     const request = new Request("http://localhost/api/performance/snapshots", {
       method: "GET",
-      headers: {
-        "x-user-id": "employee-1",
-        "x-user-role": "invalid-role",
-      },
+      headers: await authHeaders("hr", "unknown-user"),
     });
     const response = await GET(request);
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(403);
   });
 
   it("rejects unauthorized request", async () => {
