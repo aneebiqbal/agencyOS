@@ -5,6 +5,7 @@ import { ModuleShell } from "@/components/module-shell";
 import { ErrorState, LoadingState } from "@/components/ui/states";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiClientError, authJson } from "@/lib/client-api";
+import { getMeCached } from "@/lib/client-me";
 import { formatCurrencyCents } from "@/lib/format";
 
 interface MeResponse {
@@ -73,7 +74,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void authJson<MeResponse>("/api/me")
+      void getMeCached()
         .then((data) => {
           setMe(data);
           if (data.role === "owner" || data.role === "hr") {

@@ -12,6 +12,7 @@ const NAV_SECTIONS = [
       ["Dashboard", "/"],
       ["Sales", "/sales"],
       ["Projects", "/projects"],
+      ["Employees", "/employees"],
       ["Time", "/time"],
       ["Expenses", "/expenses"],
       ["Invoicing", "/invoicing"],
@@ -57,6 +58,14 @@ const PAGE_PLAYBOOK: Record<string, { title: string; steps: string[]; actions: A
     steps: ["Validate project budgets", "Check manager ownership", "Track staffing and status drift"],
     actions: [
       { label: "Log Time", href: "/time" },
+      { label: "Open Performance", href: "/performance" },
+    ],
+  },
+  "/employees": {
+    title: "People Operations",
+    steps: ["Add employee record", "Set salary or hourly rate", "Use employee IDs in time and expenses"],
+    actions: [
+      { label: "Open Payroll", href: "/payroll" },
       { label: "Open Performance", href: "/performance" },
     ],
   },

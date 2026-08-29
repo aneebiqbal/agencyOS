@@ -5,6 +5,7 @@ import { ModuleShell } from "@/components/module-shell";
 import { ErrorState, EmptyState, LoadingState } from "@/components/ui/states";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiClientError, authJson } from "@/lib/client-api";
+import { getMeCached } from "@/lib/client-me";
 import { formatCurrencyCents } from "@/lib/format";
 
 interface Lead {
@@ -23,6 +24,7 @@ interface Deal {
 export default function SalesPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
+  const [me, setMe] = useState<{ userId: string; role: "owner" | "hr" | "cto" } | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,9 +40,18 @@ export default function SalesPage() {
     setLoading(true);
     setError(null);
     try {
-      const [leadRows, dealRows] = await Promise.all([authJson<Lead[]>("/api/leads"), authJson<Deal[]>("/api/deals")]);
+      const [leadRows, dealRows, meRow] = await Promise.all([
+        authJson<Lead[]>("/api/leads"),
+        authJson<Deal[]>("/api/deals"),
+        getMeCached(),
+      ]);
       setLeads(leadRows);
       setDeals(dealRows);
+      setMe(meRow);
+      setCreateForm((current) => ({
+        ...current,
+        ownerUserId: current.ownerUserId === "owner-1" ? meRow.userId : current.ownerUserId,
+      }));
       setWinForm((current) => (current.dealId || dealRows.length === 0 ? current : { ...current, dealId: dealRows[0].id }));
       setLoading(false);
     } catch (cause) {
@@ -158,6 +169,7 @@ export default function SalesPage() {
               </select>
             </label>
           </div>
+          {me ? <p className="text-xs text-muted">Current signed-in user: {me.userId} ({me.role})</p> : null}
           <button type="submit" disabled={pending} className="btn mt-2">
             {pending ? "Creating lead..." : "Create lead"}
           </button>

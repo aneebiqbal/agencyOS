@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { authFetch } from "@/lib/client-api";
+import { getMeCached } from "@/lib/client-me";
 
 export function WatermarkOverlay() {
   const [stamp, setStamp] = useState<string>("");
@@ -10,16 +10,9 @@ export function WatermarkOverlay() {
   useEffect(() => {
     async function loadStamp() {
       try {
-        const res = await authFetch("/api/me");
-        if (!res.ok) {
-          setStamp("");
-          return;
-        }
-        const body = (await res.json()) as { data?: { userId?: string; role?: string } };
-        const id = body.data?.userId ?? "unknown";
-        const role = body.data?.role ?? "unknown";
+        const me = await getMeCached();
         setError(null);
-        setStamp(`${id} (${role}) @ ${new Date().toISOString()}`);
+        setStamp(`${me.userId} (${me.role})`);
       } catch {
         setError("Session unavailable");
         setStamp("");

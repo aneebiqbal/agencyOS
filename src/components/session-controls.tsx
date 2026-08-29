@@ -3,15 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { authFetch } from "@/lib/client-api";
+import { clearMeCache, getMeCached } from "@/lib/client-me";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
-
-interface MePayload {
-  data?: {
-    userId?: string;
-    role?: string;
-  };
-}
 
 export function SessionControls() {
   const router = useRouter();
@@ -31,16 +24,8 @@ export function SessionControls() {
       }
 
       try {
-        const response = await authFetch("/api/me");
-        if (!response.ok) {
-          setUserLabel(null);
-          setLoading(false);
-          return;
-        }
-        const body = (await response.json()) as MePayload;
-        const userId = body.data?.userId ?? "unknown";
-        const role = body.data?.role ?? "unknown";
-        setUserLabel(`${userId} (${role})`);
+        const me = await getMeCached();
+        setUserLabel(`${me.userId} (${me.role})`);
       } catch {
         setUserLabel(null);
       }
@@ -76,6 +61,7 @@ export function SessionControls() {
     }
 
     await supabase.auth.signOut();
+    clearMeCache();
     setUserLabel(null);
     router.push("/login");
     router.refresh();

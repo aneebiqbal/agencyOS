@@ -255,6 +255,15 @@ export async function createLead(
   }
 
   const ctx = actorWithOrg(actor);
+  const ownerRows = await queryAsActor(
+    ctx,
+    "select user_id from app.employees where org_id = $1 and user_id = $2 and deleted_at_utc is null limit 1",
+    [ctx.orgId, input.ownerUserId],
+  );
+  if (ownerRows.length === 0) {
+    throw badRequest("Lead owner user id is not provisioned in core accounts. Use owner/hr/cto user id from Admin.");
+  }
+
   const id = randomUUID();
   const rows = await queryAsActor(
     ctx,

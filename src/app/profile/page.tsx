@@ -5,6 +5,7 @@ import { ModuleShell } from "@/components/module-shell";
 import { ErrorState, LoadingState } from "@/components/ui/states";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiClientError, authJson } from "@/lib/client-api";
+import { getMeCached } from "@/lib/client-me";
 
 interface MePayload {
   userId: string;
@@ -26,7 +27,7 @@ export default function ProfilePage() {
         setLoading(true);
         setError(null);
         try {
-          const payload = await authJson<MePayload>("/api/me");
+          const payload = await getMeCached();
           setMe(payload);
           setLoading(false);
         } catch (cause) {
