@@ -16,6 +16,7 @@ interface MePayload {
 export function SessionControls() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [signingOut, setSigningOut] = useState(false);
   const [userLabel, setUserLabel] = useState<string | null>(null);
 
   useEffect(() => {
@@ -59,6 +60,7 @@ export function SessionControls() {
   }, []);
 
   async function signOut() {
+    setSigningOut(true);
     const supabase = getSupabaseBrowserClient();
     try {
       const { data } = await supabase.auth.getSession();
@@ -77,6 +79,7 @@ export function SessionControls() {
     setUserLabel(null);
     router.push("/login");
     router.refresh();
+    setSigningOut(false);
   }
 
   if (loading) {
@@ -93,11 +96,16 @@ export function SessionControls() {
 
   return (
     <div className="flex items-center gap-3">
-      <span className="rounded-full border border-border bg-surface-soft px-3 py-1 text-xs font-medium text-zinc-700">
+      <span className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-slate-700">
         {userLabel}
       </span>
-      <button type="button" onClick={signOut} className="text-sm font-medium text-accent hover:text-accent-strong">
-        Sign out
+      <button
+        type="button"
+        onClick={signOut}
+        disabled={signingOut}
+        className="btn-secondary"
+      >
+        {signingOut ? "Signing out..." : "Sign out"}
       </button>
     </div>
   );

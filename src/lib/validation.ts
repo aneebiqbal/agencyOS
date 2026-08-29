@@ -88,3 +88,8 @@ export const importUndoSchema = z.object({
 export const updateExpenseStatusSchema = z.object({
   status: z.enum(["submitted", "approved", "reimbursed"]),
 });
+
+export const publishConfidentialityNoticeSchema = z.object({
+  version: z.string().trim().min(1).max(40),
+  noticeText: z.string().trim().min(20).max(10_000),
+});

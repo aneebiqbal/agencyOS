@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { ModuleShell } from "@/components/module-shell";
 import { SensitiveViewGuard } from "@/components/sensitive-view-guard";
+import { ErrorState, EmptyState, LoadingState } from "@/components/ui/states";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiClientError, authJson } from "@/lib/client-api";
+import { formatCurrencyCents, formatDate } from "@/lib/format";
 
 interface PayrollRun {
   id: string;
@@ -43,19 +46,18 @@ export default function PayrollPage() {
 
   return (
     <div className="select-none" onContextMenu={(event) => event.preventDefault()}>
-      <ModuleShell
-        title="Payroll (Provider Sync)"
-        description="Read-only payroll run totals to keep statutory tax logic in Gusto/Deel/Rippling and out of local code."
-        endpoints={["GET /api/payroll/runs"]}
-      >
-        {error ? <p className="rounded-md border border-danger/40 bg-red-50 p-3 text-sm text-danger">{error}</p> : null}
-        {loading ? <p className="text-sm text-zinc-600">Loading payroll runs...</p> : null}
-        {!loading && runs.length === 0 ? <p className="text-sm text-zinc-600">No payroll runs found.</p> : null}
+      <ModuleShell title="Payroll (Provider Sync)" description="Read-only payroll run totals to keep statutory tax logic in Gusto/Deel/Rippling and out of local code.">
+        {error ? <ErrorState message={error} /> : null}
+        {loading ? <LoadingState label="Loading payroll runs..." /> : null}
+        {!loading && runs.length === 0 ? (
+          <EmptyState title="No payroll runs found" guidance="Payroll runs sync from your connected provider integration." />
+        ) : null}
         {!loading && runs.length > 0 ? (
-          <section className="rounded-xl border border-border bg-white p-4">
-            <table className="min-w-full text-sm">
+          <section className="card">
+            <div className="table-wrap">
+              <table className="table">
               <thead>
-                <tr className="border-b border-border text-left text-zinc-600">
+                <tr>
                   <th className="pb-2">Period</th>
                   <th className="pb-2">Provider Ref</th>
                   <th className="pb-2">Status</th>
@@ -64,17 +66,18 @@ export default function PayrollPage() {
               </thead>
               <tbody>
                 {runs.map((run) => (
-                  <tr key={run.id} className="border-b border-border/60">
+                  <tr key={run.id}>
                     <td className="py-2">
-                      {run.periodStartUtc.slice(0, 10)} - {run.periodEndUtc.slice(0, 10)}
+                      {formatDate(run.periodStartUtc)} - {formatDate(run.periodEndUtc)}
                     </td>
                     <td className="py-2">{run.providerRefId}</td>
-                    <td className="py-2">{run.status}</td>
-                    <td className="py-2">${(run.totalCostCents / 100).toLocaleString()}</td>
+                    <td className="py-2"><StatusBadge status={run.status} /></td>
+                    <td className="num py-2">{formatCurrencyCents(run.totalCostCents)}</td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </div>
           </section>
         ) : null}
       </ModuleShell>

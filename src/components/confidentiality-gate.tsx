@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ApiClientError, authFetch } from "@/lib/client-api";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -15,7 +16,8 @@ export function ConfidentialityGate() {
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [checked, setChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [hasSession, setHasSession] = useState(false);
+  const isNoticeMissing = (error ?? "").toLowerCase().includes("not configured");
 
   async function loadStatus(): Promise<void> {
     setLoading(true);
@@ -31,13 +33,13 @@ export function ConfidentialityGate() {
 
     const sessionToken = data.session?.access_token ?? null;
     if (!sessionToken) {
-      setToken(null);
+      setHasSession(false);
       setStatus(null);
       setLoading(false);
       return;
     }
 
-    setToken(sessionToken);
+    setHasSession(true);
 
     try {
       const response = await authFetch("/api/confidentiality/status", { method: "GET" }, 10_000);
@@ -61,17 +63,31 @@ export function ConfidentialityGate() {
   }
 
   useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
     const timer = window.setTimeout(() => {
       void loadStatus();
     }, 0);
 
+    const openHandler = () => {
+      void loadStatus();
+    };
+    window.addEventListener("agencyos:open-confidentiality", openHandler);
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      void loadStatus();
+    });
+
     return () => {
       window.clearTimeout(timer);
+      window.removeEventListener("agencyos:open-confidentiality", openHandler);
+      subscription.unsubscribe();
     };
   }, []);
 
   async function acknowledge() {
-    if (!token || !status?.noticeVersion || !checked) {
+    if (!hasSession || !status?.noticeVersion || !checked) {
       return;
     }
 
@@ -101,7 +117,7 @@ export function ConfidentialityGate() {
     return <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 text-white">Loading...</div>;
   }
 
-  if (!token) {
+  if (!hasSession) {
     return null;
   }
 
@@ -111,15 +127,22 @@ export function ConfidentialityGate() {
         <div>
           <p className="text-lg font-semibold">Access blocked</p>
           <p className="mt-2 text-sm">{error}</p>
-          <button
-            type="button"
-            onClick={() => {
-              void loadStatus();
-            }}
-            className="mt-4 rounded-md border border-white/40 px-4 py-2 text-sm font-semibold"
-          >
-            Retry
-          </button>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                void loadStatus();
+              }}
+              className="rounded-md border border-white/40 px-4 py-2 text-sm font-semibold"
+            >
+              Retry
+            </button>
+            {isNoticeMissing ? (
+              <Link href="/admin" className="rounded-md border border-white/40 bg-white/10 px-4 py-2 text-sm font-semibold">
+                Open admin
+              </Link>
+            ) : null}
+          </div>
         </div>
       </div>
     );

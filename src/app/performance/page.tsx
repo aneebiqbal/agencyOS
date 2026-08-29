@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ModuleShell } from "@/components/module-shell";
+import { ErrorState, EmptyState, LoadingState } from "@/components/ui/states";
 import { ApiClientError, authJson } from "@/lib/client-api";
+import { formatCurrencyCents, formatDate, formatPercent } from "@/lib/format";
 
 interface PerformanceSnapshot {
   id: string;
@@ -42,19 +44,18 @@ export default function PerformancePage() {
   }, [load]);
 
   return (
-    <ModuleShell
-      title="Performance"
-      description="Derived utilization, on-time delivery, and attributable revenue metrics."
-      endpoints={["GET /api/performance/snapshots"]}
-    >
-      {error ? <p className="rounded-md border border-danger/40 bg-red-50 p-3 text-sm text-danger">{error}</p> : null}
-      {loading ? <p className="text-sm text-zinc-600">Loading snapshots...</p> : null}
-      {!loading && rows.length === 0 ? <p className="text-sm text-zinc-600">No snapshots available.</p> : null}
+    <ModuleShell title="Performance" description="Derived utilization, on-time delivery, and attributable revenue metrics.">
+      {error ? <ErrorState message={error} /> : null}
+      {loading ? <LoadingState label="Loading snapshots..." /> : null}
+      {!loading && rows.length === 0 ? (
+        <EmptyState title="No snapshots available" guidance="Performance snapshots appear after scheduled analytics runs." />
+      ) : null}
       {!loading && rows.length > 0 ? (
-        <section className="rounded-xl border border-border bg-white p-4">
-          <table className="min-w-full text-sm">
+        <section className="card">
+          <div className="table-wrap">
+            <table className="table">
             <thead>
-              <tr className="border-b border-border text-left text-zinc-600">
+              <tr>
                 <th className="pb-2">Staff</th>
                 <th className="pb-2">Period</th>
                 <th className="pb-2">Utilization</th>
@@ -64,18 +65,19 @@ export default function PerformancePage() {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-b border-border/60">
+                <tr key={row.id}>
                   <td className="py-2">{row.employeeUserId}</td>
                   <td className="py-2">
-                    {row.periodStartUtc.slice(0, 10)} - {row.periodEndUtc.slice(0, 10)}
+                    {formatDate(row.periodStartUtc)} - {formatDate(row.periodEndUtc)}
                   </td>
-                  <td className="py-2">{row.utilizationPercent}%</td>
-                  <td className="py-2">{row.onTimeDeliveryPercent}%</td>
-                  <td className="py-2">${(row.attributableRevenueCents / 100).toLocaleString()}</td>
+                  <td className="num py-2">{formatPercent(row.utilizationPercent)}</td>
+                  <td className="num py-2">{formatPercent(row.onTimeDeliveryPercent)}</td>
+                  <td className="num py-2">{formatCurrencyCents(row.attributableRevenueCents)}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
         </section>
       ) : null}
     </ModuleShell>

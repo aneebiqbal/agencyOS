@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ModuleShell } from "@/components/module-shell";
+import { ErrorState, EmptyState, LoadingState } from "@/components/ui/states";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiClientError, authFetch, authJson, createIdempotencyKey } from "@/lib/client-api";
+import { formatDate, formatHours } from "@/lib/format";
 
 interface Project {
   id: string;
@@ -112,66 +115,78 @@ export default function TimePage() {
   }
 
   return (
-    <ModuleShell
-      title="Time Tracking"
-      description="Create and review time entries with explicit submit confirmation and idempotency keys."
-      endpoints={["GET /api/time-entries/list", "POST /api/time-entries"]}
-    >
-      {error ? <p className="rounded-md border border-danger/40 bg-red-50 p-3 text-sm text-danger">{error}</p> : null}
+    <ModuleShell title="Time Tracking" description="Create and review time entries with explicit submit confirmation and idempotency keys.">
+      {error ? <ErrorState message={error} /> : null}
+      {loading ? <LoadingState label="Loading time entries..." /> : null}
 
-      <section className="rounded-xl border border-border bg-white p-4">
-        <h3 className="text-sm font-semibold">Log time entry</h3>
+      <section className="card">
+        <h3 className="text-sm font-semibold text-ink">Log time entry</h3>
         <form onSubmit={submitTimeEntry} className="mt-3 grid gap-3 md:grid-cols-2">
-          <select
-            className="rounded border border-border px-3 py-2 text-sm"
-            value={form.employeeUserId}
-            onChange={(event) => setForm({ ...form, employeeUserId: event.target.value })}
-            required
-          >
-            <option value="">Select staff</option>
-            {staff.map((person) => (
-              <option key={person.staffId} value={person.staffId}>
-                {person.fullName} ({person.staffId})
-              </option>
-            ))}
-          </select>
-          <select
-            className="rounded border border-border px-3 py-2 text-sm"
-            value={form.projectId}
-            onChange={(event) => setForm({ ...form, projectId: event.target.value })}
-            required
-          >
-            <option value="">Select project</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.clientName} ({project.id})
-              </option>
-            ))}
-          </select>
-          <input
-            type="number"
-            step="0.25"
-            min={0.25}
-            max={24}
-            className="rounded border border-border px-3 py-2 text-sm"
-            value={form.hours}
-            onChange={(event) => setForm({ ...form, hours: event.target.value })}
-            required
-          />
-          <input
-            type="date"
-            className="rounded border border-border px-3 py-2 text-sm"
-            value={form.workDateUtc}
-            onChange={(event) => setForm({ ...form, workDateUtc: event.target.value })}
-            required
-          />
-          <input
-            className="rounded border border-border px-3 py-2 text-sm md:col-span-2"
-            placeholder="Work description"
-            value={form.description}
-            onChange={(event) => setForm({ ...form, description: event.target.value })}
-            required
-          />
+          <label className="field">
+            <span className="field-label">Staff member</span>
+            <select
+              className="select"
+              value={form.employeeUserId}
+              onChange={(event) => setForm({ ...form, employeeUserId: event.target.value })}
+              required
+            >
+              <option value="">Select staff</option>
+              {staff.map((person) => (
+                <option key={person.staffId} value={person.staffId}>
+                  {person.fullName} ({person.staffId})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span className="field-label">Project</span>
+            <select
+              className="select"
+              value={form.projectId}
+              onChange={(event) => setForm({ ...form, projectId: event.target.value })}
+              required
+            >
+              <option value="">Select project</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.clientName} ({project.id})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span className="field-label">Hours</span>
+            <input
+              type="number"
+              step="0.25"
+              min={0.25}
+              max={24}
+              className="input num"
+              value={form.hours}
+              onChange={(event) => setForm({ ...form, hours: event.target.value })}
+              required
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">Work date</span>
+            <input
+              type="date"
+              className="input"
+              value={form.workDateUtc}
+              onChange={(event) => setForm({ ...form, workDateUtc: event.target.value })}
+              required
+            />
+          </label>
+          <label className="field md:col-span-2">
+            <span className="field-label">Work description</span>
+            <input
+              className="input"
+              placeholder="Client workshop, architecture review, sprint planning"
+              value={form.description}
+              onChange={(event) => setForm({ ...form, description: event.target.value })}
+              required
+            />
+          </label>
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -181,26 +196,27 @@ export default function TimePage() {
             Billable
           </label>
           <div>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            >
-              {submitting ? "Submitting..." : "Submit time"}
-            </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="btn"
+              >
+                {submitting ? "Submitting..." : "Submit time"}
+              </button>
           </div>
         </form>
       </section>
 
-      <section className="rounded-xl border border-border bg-white p-4">
-        <h3 className="text-sm font-semibold">Recent entries</h3>
-        {loading ? <p className="mt-3 text-sm text-zinc-600">Loading entries...</p> : null}
-        {!loading && entries.length === 0 ? <p className="mt-3 text-sm text-zinc-600">No time entries yet.</p> : null}
+      <section className="card">
+        <h3 className="text-sm font-semibold text-ink">Recent entries</h3>
+        {!loading && entries.length === 0 ? (
+          <EmptyState title="No time entries yet" guidance="Submit a time entry above to populate this register." />
+        ) : null}
         {!loading && entries.length > 0 ? (
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="table-wrap mt-3">
+            <table className="table">
               <thead>
-                <tr className="border-b border-border text-left text-zinc-600">
+                <tr>
                   <th className="pb-2">Date</th>
                   <th className="pb-2">Staff</th>
                   <th className="pb-2">Project</th>
@@ -210,12 +226,14 @@ export default function TimePage() {
               </thead>
               <tbody>
                 {entries.map((entry) => (
-                  <tr key={entry.id} className="border-b border-border/60">
-                    <td className="py-2">{entry.workDateUtc.slice(0, 10)}</td>
+                  <tr key={entry.id}>
+                    <td className="py-2">{formatDate(entry.workDateUtc)}</td>
                     <td className="py-2">{entry.employeeUserId}</td>
                     <td className="py-2">{entry.projectId}</td>
-                    <td className="py-2">{entry.hours}</td>
-                    <td className="py-2">{entry.billable ? "Yes" : "No"}</td>
+                    <td className="num py-2">{formatHours(entry.hours)}</td>
+                    <td className="py-2">
+                      <StatusBadge status={entry.billable ? "billable" : "non-billable"} />
+                    </td>
                   </tr>
                 ))}
               </tbody>

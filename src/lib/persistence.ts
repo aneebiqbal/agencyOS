@@ -973,6 +973,28 @@ export async function acknowledgeConfidentiality(
   });
 }
 
+export async function publishConfidentialityNotice(
+  actor: SessionUser,
+  version: string,
+  noticeText: string,
+): Promise<void> {
+  if (!isPostgresConfigured()) {
+    return;
+  }
+
+  await transactionAsActor(actorWithOrg(actor), async (client) => {
+    await client.query(
+      `insert into app.confidentiality_notice_versions (version, notice_text, deleted_at_utc)
+       values ($1, $2, null)`,
+      [version, noticeText],
+    );
+
+    await appendAuditLog(client, actorWithOrg(actor), "confidentiality.notice.publish", "notice", version, null, {
+      version,
+    });
+  });
+}
+
 export async function logSensitiveView(
   actor: SessionUser,
   viewKey: string,

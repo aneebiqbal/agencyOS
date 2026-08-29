@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ModuleShell } from "@/components/module-shell";
+import { ErrorState, EmptyState, LoadingState } from "@/components/ui/states";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiClientError, authJson } from "@/lib/client-api";
+import { formatCurrencyCents } from "@/lib/format";
 
 interface Project {
   id: string;
@@ -107,18 +110,31 @@ export default function ProjectsPage() {
   }
 
   return (
-    <ModuleShell
-      title="Projects & Delivery"
-      description="Project records with optimistic locking and member visibility."
-      endpoints={["GET /api/projects", "GET /api/projects/:projectId", "PATCH /api/projects/:projectId/budget"]}
-    >
-      {error ? <p className="rounded-md border border-danger/40 bg-red-50 p-3 text-sm text-danger">{error}</p> : null}
+    <ModuleShell title="Projects & Delivery" description="Project records with optimistic locking and member visibility.">
+      {error ? <ErrorState message={error} /> : null}
+      {loading ? <LoadingState label="Loading project records..." /> : null}
+
+      <section className="kpi-grid">
+        <div className="card">
+          <p className="text-xs uppercase tracking-[0.1em] text-muted">Total projects</p>
+          <p className="num mt-2 text-2xl font-semibold text-ink">{projects.length}</p>
+        </div>
+        <div className="card">
+          <p className="text-xs uppercase tracking-[0.1em] text-muted">Active projects</p>
+          <p className="num mt-2 text-2xl font-semibold text-ink">{projects.filter((project) => project.status === "active").length}</p>
+        </div>
+        <div className="card">
+          <p className="text-xs uppercase tracking-[0.1em] text-muted">Total budget</p>
+          <p className="num mt-2 text-2xl font-semibold text-ink">{formatCurrencyCents(projects.reduce((sum, project) => sum + project.budgetCents, 0))}</p>
+        </div>
+      </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-border bg-white p-4">
-          <h3 className="text-sm font-semibold">Projects</h3>
-          {loading ? <p className="mt-3 text-sm text-zinc-600">Loading projects...</p> : null}
-          {!loading && projects.length === 0 ? <p className="mt-3 text-sm text-zinc-600">No projects found.</p> : null}
+        <div className="card">
+          <h3 className="text-sm font-semibold text-ink">Projects</h3>
+          {!loading && projects.length === 0 ? (
+            <EmptyState title="No projects found" guidance="A project appears here after a won deal is converted." />
+          ) : null}
           <div className="mt-3 flex flex-col gap-2">
             {projects.map((project) => (
               <button
@@ -126,26 +142,29 @@ export default function ProjectsPage() {
                 type="button"
                 onClick={() => setSelectedProjectId(project.id)}
                 className={`rounded border px-3 py-2 text-left text-sm ${
-                  selectedProjectId === project.id ? "border-accent bg-teal-50" : "border-border"
+                  selectedProjectId === project.id ? "border-accent bg-emerald-50" : "border-border"
                 }`}
               >
-                <p className="font-medium">{project.clientName}</p>
-                <p className="text-xs text-zinc-600">{project.id}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium text-ink">{project.clientName}</p>
+                  <StatusBadge status={project.status} />
+                </div>
+                <p className="text-xs text-muted">{project.id}</p>
               </button>
             ))}
           </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-white p-4">
-          <h3 className="text-sm font-semibold">Project detail</h3>
-          {!selectedProject ? <p className="mt-3 text-sm text-zinc-600">Pick a project to inspect.</p> : null}
+        <div className="card">
+          <h3 className="text-sm font-semibold text-ink">Project detail</h3>
+          {!selectedProject ? <EmptyState title="Pick a project" guidance="Select any row in the left pane to inspect details." /> : null}
           {selectedProject ? (
             <div className="mt-3 space-y-3 text-sm">
               <p>
                 <span className="font-medium">Client:</span> {selectedProject.project.clientName}
               </p>
               <p>
-                <span className="font-medium">Status:</span> {selectedProject.project.status}
+                <span className="font-medium">Status:</span> <StatusBadge status={selectedProject.project.status} />
               </p>
               <p>
                 <span className="font-medium">Manager:</span> {selectedProject.project.managerUserId}
@@ -153,21 +172,26 @@ export default function ProjectsPage() {
               <p>
                 <span className="font-medium">Members:</span> {selectedProject.members.join(", ") || "None"}
               </p>
+              <p>
+                <span className="font-medium">Budget:</span> <span className="num">{formatCurrencyCents(selectedProject.project.budgetCents)}</span>
+              </p>
 
               <form onSubmit={updateBudget} className="space-y-2">
-                <label className="block text-xs font-medium text-zinc-700">Budget (cents)</label>
-                <input
-                  type="number"
-                  min={0}
-                  className="w-full rounded border border-border px-3 py-2"
-                  value={budgetInput}
-                  onChange={(event) => setBudgetInput(event.target.value)}
-                  required
-                />
+                <label className="field">
+                  <span className="field-label">Budget (cents)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    className="input num"
+                    value={budgetInput}
+                    onChange={(event) => setBudgetInput(event.target.value)}
+                    required
+                  />
+                </label>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="rounded bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  className="btn"
                 >
                   {saving ? "Saving..." : "Update budget"}
                 </button>

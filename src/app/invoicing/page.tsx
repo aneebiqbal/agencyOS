@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ModuleShell } from "@/components/module-shell";
+import { ErrorState, EmptyState, LoadingState } from "@/components/ui/states";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiClientError, authJson } from "@/lib/client-api";
+import { formatCurrencyCents, formatDate } from "@/lib/format";
 
 interface Project {
   id: string;
@@ -105,54 +108,56 @@ export default function InvoicingPage() {
   }
 
   return (
-    <ModuleShell
-      title="Invoicing"
-      description="Generate invoices and recover failed sends safely."
-      endpoints={[
-        "GET /api/invoices",
-        "POST /api/invoices/generate",
-        "POST /api/invoices/:invoiceId/retry-send",
-      ]}
-    >
-      {error ? <p className="rounded-md border border-danger/40 bg-red-50 p-3 text-sm text-danger">{error}</p> : null}
+    <ModuleShell title="Invoicing" description="Generate invoices and recover failed sends safely.">
+      {error ? <ErrorState message={error} /> : null}
+      {loading ? <LoadingState label="Loading invoice register..." /> : null}
 
-      <section className="rounded-xl border border-border bg-white p-4">
-        <h3 className="text-sm font-semibold">Generate invoice</h3>
+      <section className="card">
+        <h3 className="text-sm font-semibold text-ink">Generate invoice</h3>
         <form onSubmit={generateInvoice} className="mt-3 grid gap-3 md:grid-cols-3">
-          <select
-            className="rounded border border-border px-3 py-2 text-sm"
-            value={form.projectId}
-            onChange={(event) => setForm({ ...form, projectId: event.target.value })}
-            required
-          >
-            <option value="">Select project</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.clientName} ({project.id})
-              </option>
-            ))}
-          </select>
-          <input
-            type="date"
-            className="rounded border border-border px-3 py-2 text-sm"
-            value={form.dueDateUtc}
-            onChange={(event) => setForm({ ...form, dueDateUtc: event.target.value })}
-            required
-          />
-          <input
-            type="number"
-            min={0}
-            max={10000}
-            className="rounded border border-border px-3 py-2 text-sm"
-            value={form.taxRateBps}
-            onChange={(event) => setForm({ ...form, taxRateBps: event.target.value })}
-            required
-          />
+          <label className="field">
+            <span className="field-label">Project</span>
+            <select
+              className="select"
+              value={form.projectId}
+              onChange={(event) => setForm({ ...form, projectId: event.target.value })}
+              required
+            >
+              <option value="">Select project</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.clientName} ({project.id})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span className="field-label">Due date</span>
+            <input
+              type="date"
+              className="input"
+              value={form.dueDateUtc}
+              onChange={(event) => setForm({ ...form, dueDateUtc: event.target.value })}
+              required
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">Tax rate (bps)</span>
+            <input
+              type="number"
+              min={0}
+              max={10000}
+              className="input num"
+              value={form.taxRateBps}
+              onChange={(event) => setForm({ ...form, taxRateBps: event.target.value })}
+              required
+            />
+          </label>
           <div className="md:col-span-3">
             <button
               type="submit"
               disabled={submitting}
-              className="rounded bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className="btn"
             >
               {submitting ? "Generating..." : "Generate invoice"}
             </button>
@@ -160,31 +165,34 @@ export default function InvoicingPage() {
         </form>
       </section>
 
-      <section className="rounded-xl border border-border bg-white p-4">
-        <h3 className="text-sm font-semibold">Invoices</h3>
-        {loading ? <p className="mt-3 text-sm text-zinc-600">Loading invoices...</p> : null}
-        {!loading && invoices.length === 0 ? <p className="mt-3 text-sm text-zinc-600">No invoices yet.</p> : null}
+      <section className="card">
+        <h3 className="text-sm font-semibold text-ink">Invoices</h3>
+        {!loading && invoices.length === 0 ? (
+          <EmptyState title="No invoices yet" guidance="Generate an invoice from project time entries above." />
+        ) : null}
         {!loading && invoices.length > 0 ? (
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="table-wrap mt-3">
+            <table className="table">
               <thead>
-                <tr className="border-b border-border text-left text-zinc-600">
+                <tr>
                   <th className="pb-2">Invoice</th>
                   <th className="pb-2">Client</th>
                   <th className="pb-2">Total</th>
                   <th className="pb-2">Status</th>
+                  <th className="pb-2">Due</th>
                   <th className="pb-2">Attempts</th>
                   <th className="pb-2">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {invoices.map((invoice) => (
-                  <tr key={invoice.id} className="border-b border-border/60">
+                  <tr key={invoice.id}>
                     <td className="py-2 font-mono text-xs">{invoice.id}</td>
                     <td className="py-2">{invoice.clientName}</td>
-                    <td className="py-2">{invoice.totalCents}</td>
-                    <td className="py-2">{invoice.status}</td>
-                    <td className="py-2">{invoice.sendAttempts}</td>
+                    <td className="num py-2">{formatCurrencyCents(invoice.totalCents)}</td>
+                    <td className="py-2"><StatusBadge status={invoice.status} /></td>
+                    <td className="py-2">{formatDate(invoice.dueDateUtc)}</td>
+                    <td className="num py-2">{invoice.sendAttempts}</td>
                     <td className="py-2">
                       {invoice.status === "send_failed" ? (
                         <button
@@ -192,12 +200,12 @@ export default function InvoicingPage() {
                           onClick={() => {
                             void retrySend(invoice.id);
                           }}
-                          className="rounded border border-border px-2 py-1 text-xs"
+                          className="btn-secondary px-2 py-1 text-xs"
                         >
                           Retry send
                         </button>
                       ) : (
-                        <span className="text-zinc-500">-</span>
+                        <span className="text-muted">-</span>
                       )}
                     </td>
                   </tr>

@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ModuleShell } from "@/components/module-shell";
+import { ErrorState, EmptyState, LoadingState } from "@/components/ui/states";
 import { ApiClientError, authJson } from "@/lib/client-api";
+import { formatCurrencyCents, formatDateTime } from "@/lib/format";
 
 interface FinanceSummary {
   periodStartUtc: string;
@@ -69,29 +71,25 @@ export default function FinancePage() {
   }, [refresh]);
 
   return (
-    <ModuleShell
-      title="Finance"
-      description="Revenue, payroll outflow, expense outflow, and net margin with recent immutable audit context."
-      endpoints={["GET /api/finance/summary", "GET /api/audit-logs"]}
-    >
-      {error ? <p className="rounded-md border border-danger/40 bg-red-50 p-3 text-sm text-danger">{error}</p> : null}
+    <ModuleShell title="Finance" description="Revenue, payroll outflow, expense outflow, and net margin with recent immutable audit context.">
+      {error ? <ErrorState message={error} /> : null}
 
-      <section className="rounded-xl border border-border bg-white p-4">
+      <section className="card">
         <div className="flex flex-wrap items-end gap-3">
-          <label className="text-sm">
-            <span className="block text-xs text-zinc-600">From</span>
+          <label className="field text-sm">
+            <span className="field-label">From</span>
             <input
               type="date"
-              className="rounded border border-border px-3 py-2"
+              className="input"
               value={fromDate}
               onChange={(event) => setFromDate(event.target.value)}
             />
           </label>
-          <label className="text-sm">
-            <span className="block text-xs text-zinc-600">To</span>
+          <label className="field text-sm">
+            <span className="field-label">To</span>
             <input
               type="date"
-              className="rounded border border-border px-3 py-2"
+              className="input"
               value={toDate}
               onChange={(event) => setToDate(event.target.value)}
             />
@@ -101,14 +99,14 @@ export default function FinancePage() {
             onClick={() => {
               void refresh();
             }}
-            className="rounded bg-accent px-4 py-2 text-sm font-semibold text-white"
+            className="btn"
           >
             Refresh
           </button>
         </div>
       </section>
 
-      {loading ? <p className="text-sm text-zinc-600">Loading finance metrics...</p> : null}
+      {loading ? <LoadingState label="Loading finance metrics..." /> : null}
       {summary ? (
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
@@ -117,22 +115,24 @@ export default function FinancePage() {
             ["Expense Out", summary.expenseOutCents],
             ["Net Margin", summary.netMarginCents],
           ].map(([label, value]) => (
-            <div key={label} className="rounded-xl border border-border bg-white p-4">
-              <p className="text-xs uppercase tracking-wide text-zinc-600">{label}</p>
-              <p className="mt-2 text-2xl font-semibold">${(Number(value) / 100).toLocaleString()}</p>
+            <div key={label} className="card">
+              <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
+              <p className="num mt-2 text-2xl font-semibold text-ink">{formatCurrencyCents(Number(value))}</p>
             </div>
           ))}
         </section>
       ) : null}
 
-      <section className="rounded-xl border border-border bg-white p-4">
-        <h3 className="text-sm font-semibold">Recent audit events</h3>
-        {auditLogs.length === 0 ? <p className="mt-3 text-sm text-zinc-600">No audit entries found.</p> : null}
+      <section className="card">
+        <h3 className="text-sm font-semibold text-ink">Recent audit events</h3>
+        {!loading && auditLogs.length === 0 ? (
+          <EmptyState title="No audit entries found" guidance="Operational mutations create immutable audit log records." />
+        ) : null}
         {auditLogs.length > 0 ? (
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="table-wrap mt-3">
+            <table className="table">
               <thead>
-                <tr className="border-b border-border text-left text-zinc-600">
+                <tr>
                   <th className="pb-2">When</th>
                   <th className="pb-2">Action</th>
                   <th className="pb-2">Entity</th>
@@ -141,8 +141,8 @@ export default function FinancePage() {
               </thead>
               <tbody>
                 {auditLogs.map((entry) => (
-                  <tr key={entry.id} className="border-b border-border/60">
-                    <td className="py-2">{new Date(entry.timestampUtc).toLocaleString()}</td>
+                  <tr key={entry.id}>
+                    <td className="py-2">{formatDateTime(entry.timestampUtc)}</td>
                     <td className="py-2">{entry.action}</td>
                     <td className="py-2">{entry.entity}</td>
                     <td className="py-2 font-mono text-xs">{entry.entityId}</td>

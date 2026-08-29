@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ModuleShell } from "@/components/module-shell";
+import { ErrorState } from "@/components/ui/states";
 import { ApiClientError, authJson } from "@/lib/client-api";
 
 interface ImportFlag {
@@ -149,21 +150,17 @@ export default function ImportsPage() {
   }
 
   return (
-    <ModuleShell
-      title="CSV Import Pipeline"
-      description="Upload CSV, preview parsing/flags, resolve flagged rows, then confirm commit."
-      endpoints={["POST /api/imports/preview", "POST /api/imports/confirm", "POST /api/imports/:batchId/undo"]}
-    >
-      {error ? <p className="rounded-md border border-danger/40 bg-red-50 p-3 text-sm text-danger">{error}</p> : null}
+    <ModuleShell title="CSV Import Pipeline" description="Upload CSV, preview parsing/flags, resolve flagged rows, then confirm commit.">
+      {error ? <ErrorState message={error} /> : null}
 
-      <section className="rounded-xl border border-border bg-white p-4">
-        <h3 className="text-sm font-semibold">Step 1: Upload + Preview</h3>
+      <section className="card">
+        <h3 className="text-sm font-semibold text-ink">Step 1: Upload + Preview</h3>
         <form onSubmit={runPreview} className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-          <input type="file" name="csvFile" accept=".csv,text/csv" className="text-sm" required />
+          <input type="file" name="csvFile" accept=".csv,text/csv" className="input text-sm" required />
           <button
             type="submit"
             disabled={loading}
-            className="rounded bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            className="btn"
           >
             {loading ? "Generating preview..." : "Generate preview"}
           </button>
@@ -179,15 +176,15 @@ export default function ImportsPage() {
               ["Flagged", preview.totals.flagged],
               ["Skipped", preview.totals.skipped],
             ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-border bg-white p-4">
-                <p className="text-xs uppercase tracking-wide text-zinc-600">{label}</p>
-                <p className="mt-2 text-2xl font-semibold">{value}</p>
-              </div>
-            ))}
-          </section>
+               <div key={label} className="card">
+                 <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
+                 <p className="num mt-2 text-2xl font-semibold text-ink">{value}</p>
+               </div>
+             ))}
+           </section>
 
-          <section className="rounded-xl border border-border bg-white p-4">
-            <h3 className="text-sm font-semibold">Step 2: Resolve flagged rows + confirm</h3>
+          <section className="card">
+            <h3 className="text-sm font-semibold text-ink">Step 2: Resolve flagged rows + confirm</h3>
             {preview.unmappedColumns.length > 0 ? (
               <p className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800">
                 Unmapped columns: {preview.unmappedColumns.join(", ")}. Confirm is blocked until CSV mapping is corrected.
@@ -195,22 +192,22 @@ export default function ImportsPage() {
             ) : null}
 
             {preview.flaggedRows.length === 0 ? (
-              <p className="mt-2 text-sm text-zinc-600">No flagged rows detected. Ready to confirm.</p>
+              <p className="mt-2 text-sm text-muted">No flagged rows detected. Ready to confirm.</p>
             ) : (
               <div className="mt-3 space-y-4">
                 {preview.flaggedRows.slice(0, 50).map((row) => (
-                  <div key={row.rowNumber} className="rounded border border-border p-3 text-sm">
+                  <div key={row.rowNumber} className="card-muted text-sm">
                     <p className="font-medium">
                       Row {row.rowNumber} ({row.rowType})
                     </p>
-                    <ul className="mt-1 list-disc pl-5 text-zinc-700">
+                    <ul className="mt-1 list-disc pl-5 text-slate-700">
                       {row.flags.map((flag) => (
                         <li key={`${row.rowNumber}-${flag.code}`}>{flag.message}</li>
                       ))}
                     </ul>
                     <div className="mt-2 grid gap-2 md:grid-cols-3">
                       <input
-                        className="rounded border border-border px-2 py-1"
+                        className="input"
                         placeholder="Resolved staff id"
                         value={rowEmployeeLinks[String(row.rowNumber)] ?? ""}
                         onChange={(event) =>
@@ -221,7 +218,7 @@ export default function ImportsPage() {
                         }
                       />
                       <select
-                        className="rounded border border-border px-2 py-1"
+                        className="select"
                         value={rowProjectDecisions[String(row.rowNumber)]?.action ?? "skip"}
                         onChange={(event) =>
                           setRowProjectDecisions((current) => ({
@@ -238,7 +235,7 @@ export default function ImportsPage() {
                         <option value="create_project">Create project</option>
                       </select>
                       <input
-                        className="rounded border border-border px-2 py-1"
+                        className="input"
                         placeholder="Project name (optional)"
                         value={rowProjectDecisions[String(row.rowNumber)]?.projectName ?? ""}
                         onChange={(event) =>
@@ -255,7 +252,7 @@ export default function ImportsPage() {
                   </div>
                 ))}
                 {preview.flaggedRows.length > 50 ? (
-                  <p className="text-xs text-zinc-500">Showing first 50 flagged rows in UI preview.</p>
+                  <p className="text-xs text-muted">Showing first 50 flagged rows in UI preview.</p>
                 ) : null}
               </div>
             )}
@@ -276,19 +273,19 @@ export default function ImportsPage() {
               onClick={() => {
                 void confirmImport();
               }}
-              className="mt-4 rounded bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className="btn mt-4"
             >
               {confirming ? "Confirming..." : "Confirm import"}
             </button>
 
             {result ? (
-              <p className="mt-3 rounded border border-teal-300 bg-teal-50 p-3 text-sm text-teal-900">
+              <p className="mt-3 rounded border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
                 Import committed. Batch `{result.batchId}` - imported {result.importedRows}, skipped {result.skippedRows}.
               </p>
             ) : null}
 
             {staff.length > 0 ? (
-              <p className="mt-3 text-xs text-zinc-500">
+              <p className="mt-3 text-xs text-muted">
                 Known staff ids: {staff.map((person) => person.staffId).join(", ")}
               </p>
             ) : null}
