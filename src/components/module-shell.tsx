@@ -1,13 +1,15 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { SessionControls } from "@/components/session-controls";
 
 interface ModuleShellProps {
   title: string;
   description: string;
   endpoints: string[];
+  children?: ReactNode;
 }
 
-export function ModuleShell({ title, description, endpoints }: ModuleShellProps) {
+export function ModuleShell({ title, description, endpoints, children }: ModuleShellProps) {
   return (
     <div className="page-bg min-h-screen p-6 md:p-12">
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 rounded-2xl border border-border bg-surface p-6 md:p-8">
@@ -33,6 +35,8 @@ export function ModuleShell({ title, description, endpoints }: ModuleShellProps)
             ))}
           </ul>
         </section>
+
+        {children ?? null}
       </main>
     </div>
   );

@@ -40,3 +40,21 @@ export async function authFetch(input: string, init: RequestInit = {}, timeoutMs
 
   return response;
 }
+
+export async function authJson<T>(input: string, init: RequestInit = {}, timeoutMs = 12_000): Promise<T> {
+  const response = await authFetch(input, init, timeoutMs);
+  const body = (await response.json().catch(() => ({}))) as { message?: string; data?: T };
+
+  if (!response.ok) {
+    throw new ApiClientError(body.message ?? "Request failed.", response.status);
+  }
+
+  return (body.data ?? body) as T;
+}
+
+export function createIdempotencyKey(prefix: string): string {
+  if (typeof window !== "undefined" && typeof window.crypto !== "undefined" && "randomUUID" in window.crypto) {
+    return `${prefix}-${window.crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}

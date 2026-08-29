@@ -84,3 +84,7 @@ export const importConfirmSchema = z.object({
 export const importUndoSchema = z.object({
   reason: z.string().trim().min(5).max(500),
 });
+
+export const updateExpenseStatusSchema = z.object({
+  status: z.enum(["submitted", "approved", "reimbursed"]),
+});
