@@ -309,7 +309,7 @@ export default function ImportsPage() {
               <p className="mt-2 text-sm text-muted">No flagged rows detected. Ready to confirm.</p>
             ) : (
               <div className="mt-3 space-y-4">
-                {preview.flaggedRows.slice(0, 50).map((row) => (
+                {preview.flaggedRows.map((row) => (
                   <div key={row.rowNumber} className="card-muted text-sm">
                     <p className="font-medium">
                       Row {row.rowNumber} ({row.rowType})
@@ -385,9 +385,6 @@ export default function ImportsPage() {
                     </div>
                   </div>
                 ))}
-                {preview.flaggedRows.length > 50 ? (
-                  <p className="text-xs text-muted">Showing first 50 flagged rows in UI preview.</p>
-                ) : null}
               </div>
             )}
 

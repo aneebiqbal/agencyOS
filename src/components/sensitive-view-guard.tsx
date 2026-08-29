@@ -7,6 +7,7 @@ const REAUTH_MS = 5 * 60 * 1000;
 
 export function SensitiveViewGuard() {
   const [locked, setLocked] = useState(false);
+  const [reauthError, setReauthError] = useState<string | null>(null);
 
   useEffect(() => {
     const lockTimer = window.setTimeout(() => {
@@ -30,10 +31,17 @@ export function SensitiveViewGuard() {
   }, []);
 
   async function reauthenticate() {
-    const response = await authFetch("/api/me");
-    if (response.ok) {
+    setReauthError(null);
+    try {
+      const response = await authFetch("/api/me");
+      if (!response.ok) {
+        setReauthError("Session verification failed. Please sign in again.");
+        return;
+      }
       setLocked(false);
       window.setTimeout(() => setLocked(true), REAUTH_MS);
+    } catch {
+      setReauthError("Could not verify session right now. Check connection and retry.");
     }
   }
 
@@ -46,6 +54,7 @@ export function SensitiveViewGuard() {
       <div className="rounded-xl border border-white/25 bg-zinc-900 p-6 text-center">
         <p className="text-lg font-semibold">Payroll view timed out</p>
         <p className="mt-2 text-sm opacity-90">Re-authentication is required for sensitive views.</p>
+        {reauthError ? <p className="mt-3 text-xs text-rose-300">{reauthError}</p> : null}
         <button
           type="button"
           className="mt-4 rounded bg-teal-600 px-4 py-2 text-sm font-semibold"
@@ -53,6 +62,9 @@ export function SensitiveViewGuard() {
         >
           Re-authenticate view
         </button>
+        <a href="/login" className="mt-3 block text-xs text-teal-200 underline">
+          Sign in again
+        </a>
       </div>
     </div>
   );

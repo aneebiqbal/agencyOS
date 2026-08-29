@@ -267,6 +267,7 @@ export default function ExpensesPage() {
           <label className="field">
             <span className="field-label">Receipt URL</span>
             <input
+              type="url"
               className="input"
               placeholder="https://receipts.example.com/id"
               value={form.receiptUrl}

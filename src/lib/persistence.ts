@@ -937,6 +937,7 @@ export async function generateInvoiceFromProjectTime(
     }
 
     const entries = entriesRows.rows.map((row) => mapTimeEntryRow(row));
+    const entryIds = entries.map((entry) => entry.id);
     const lineItems: InvoiceLineItem[] = entries.map((entry) => {
       const quantity = Math.round(entry.hours * 100);
       return {
@@ -978,8 +979,8 @@ export async function generateInvoiceFromProjectTime(
     }
 
     await client.query(
-      "update app.time_entries set billed_invoice_id = $3 where org_id = $1 and project_id = $2 and billable = true and billed_invoice_id is null and deleted_at_utc is null and voided_at_utc is null",
-      [ctx.orgId, input.projectId, invoiceId],
+      "update app.time_entries set billed_invoice_id = $3 where org_id = $1 and id = any($2::uuid[]) and billed_invoice_id is null and deleted_at_utc is null and voided_at_utc is null",
+      [ctx.orgId, entryIds, invoiceId],
     );
 
     await appendAuditLog(client, ctx, "invoice.generate", "invoice", invoiceId, null, invoiceRows.rows[0]);
@@ -1850,6 +1851,15 @@ export async function undoImportBatch(
     );
     if (batch.rowCount === 0) {
       throw notFound("Import batch not found.");
+    }
+
+    const billedRows = await client.query(
+      "select id, billed_invoice_id from app.time_entries where org_id = $1 and import_batch_id = $2 and deleted_at_utc is null and billed_invoice_id is not null limit 5",
+      [actor.orgId, batchId],
+    );
+    if (billedRows.rowCount && billedRows.rowCount > 0) {
+      const invoiceIds = Array.from(new Set(billedRows.rows.map((row) => String(row.billed_invoice_id))));
+      throw conflict(`Import batch includes billed time entries linked to invoice(s): ${invoiceIds.join(", ")}. Reverse invoices before undo.`);
     }
 
     await client.query(

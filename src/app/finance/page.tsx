@@ -43,6 +43,15 @@ export default function FinancePage() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    if (!fromDate || !toDate) {
+      setError("Choose both from and to dates.");
+      return;
+    }
+    if (fromDate > toDate) {
+      setError("From date cannot be later than to date.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -99,6 +108,8 @@ export default function FinancePage() {
               type="date"
               className="input"
               value={fromDate}
+              max={toDate}
+              required
               onChange={(event) => setFromDate(event.target.value)}
             />
           </label>
@@ -108,6 +119,8 @@ export default function FinancePage() {
               type="date"
               className="input"
               value={toDate}
+              min={fromDate}
+              required
               onChange={(event) => setToDate(event.target.value)}
             />
           </label>

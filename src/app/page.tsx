@@ -179,7 +179,7 @@ export default function DashboardPage() {
         <div className="card">
           <h2 className="text-sm font-semibold text-ink">Recent activity</h2>
           <p className="mt-1 text-xs text-muted">Immutable audit events from finance, staffing, project, and sales updates.</p>
-          {audit.length === 0 ? (
+          {!loading && audit.length === 0 ? (
             <EmptyState title="No audit activity yet" guidance="Actions appear here after writes to operational records." />
           ) : (
             <div className="mt-3 space-y-2 text-sm">
@@ -201,9 +201,9 @@ export default function DashboardPage() {
             Open project workspace
           </Link>
         </div>
-        {projects.length === 0 ? (
+        {!loading && projects.length === 0 ? (
           <EmptyState title="No projects to display" guidance="Create or convert a lead to start delivery tracking." />
-        ) : (
+        ) : !loading ? (
           <div className="mt-3 grid gap-2 md:grid-cols-2">
             {projects.slice(0, 6).map((project) => (
               <Link
@@ -219,7 +219,7 @@ export default function DashboardPage() {
               </Link>
             ))}
           </div>
-        )}
+        ) : null}
       </section>
     </ModuleShell>
   );

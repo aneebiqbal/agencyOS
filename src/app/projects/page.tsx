@@ -76,6 +76,12 @@ export default function ProjectsPage() {
     }
   }, []);
 
+  function selectProject(projectId: string) {
+    setSelectedProjectId(projectId);
+    setSelectedProject(null);
+    setBudgetInput("");
+  }
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadProjects();
@@ -100,6 +106,10 @@ export default function ProjectsPage() {
   async function updateBudget(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedProject) {
+      return;
+    }
+    if (selectedProject.project.id !== selectedProjectId) {
+      setError("Project detail is refreshing. Please wait and retry.");
       return;
     }
 
@@ -175,7 +185,7 @@ export default function ProjectsPage() {
                       <td className="py-2">
                         <button
                           type="button"
-                          onClick={() => setSelectedProjectId(project.id)}
+                          onClick={() => selectProject(project.id)}
                           className="text-left"
                         >
                           <p className="font-medium text-ink">{project.clientName}</p>
@@ -240,7 +250,7 @@ export default function ProjectsPage() {
                 </label>
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={saving || detailLoading || selectedProject.project.id !== selectedProjectId}
                   className="btn"
                 >
                   {saving ? "Saving..." : "Apply budget update"}

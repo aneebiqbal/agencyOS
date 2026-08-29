@@ -89,13 +89,17 @@ export default function SalesPage() {
       setDeals(dealRows);
       setCoreUsers(users);
       setMe(meRow);
+      const defaultManagerUserId = users.find((user) => user.role === "cto")?.userId ?? meRow.userId;
       setCreateForm((current) => ({
         ...current,
         ownerUserId: current.ownerUserId === "owner-1" ? meRow.userId : current.ownerUserId || users[0]?.userId || meRow.userId,
       }));
       setWinForm((current) => ({
         ...current,
-        managerUserId: current.managerUserId === "cto-1" ? meRow.userId : current.managerUserId || meRow.userId,
+        managerUserId:
+          current.managerUserId === "cto-1"
+            ? defaultManagerUserId
+            : current.managerUserId || defaultManagerUserId,
       }));
       const firstOpenDeal = dealRows.find((deal) => deal.stage === "open");
       const leadIdsWithAnyDeal = new Set(dealRows.map((deal) => deal.leadId).filter(Boolean));
