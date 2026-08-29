@@ -17,8 +17,33 @@ const appMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agency OS",
-  description: "Internal business automation platform boilerplate",
+  metadataBase: new URL("https://agencyos.internal"),
+  title: {
+    default: "Agency OS",
+    template: "%s | Agency OS",
+  },
+  description: "Operational command center for sales, delivery, people, payroll, and finance teams.",
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+      "max-image-preview": "none",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
+  openGraph: {
+    title: "Agency OS",
+    description: "Operational command center for software delivery organizations.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "Agency OS",
+    description: "Operational command center for software delivery organizations.",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

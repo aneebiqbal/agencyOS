@@ -872,12 +872,26 @@ export async function updateExpenseStatus(
   expenseId: string,
   nextStatus: Expense["status"],
 ): Promise<Expense> {
+  function assertValidExpenseTransition(currentStatus: Expense["status"], requestedStatus: Expense["status"]) {
+    if (currentStatus === requestedStatus) {
+      return;
+    }
+    if (currentStatus === "submitted" && requestedStatus === "approved") {
+      return;
+    }
+    if (currentStatus === "approved" && requestedStatus === "reimbursed") {
+      return;
+    }
+    throw conflict(`Invalid expense status transition: ${currentStatus} -> ${requestedStatus}.`);
+  }
+
   if (!isPostgresConfigured()) {
     const updated = memoryStore.transaction((state) => {
       const match = state.expenses.find((expense) => expense.id === expenseId && expense.deletedAtUtc === null);
       if (!match) {
         throw notFound("Expense not found.");
       }
+      assertValidExpenseTransition(match.status, nextStatus);
       match.status = nextStatus;
       return structuredClone(match);
     });
@@ -896,6 +910,7 @@ export async function updateExpenseStatus(
     }
 
     const before = mapExpenseRow(beforeRows.rows[0]);
+    assertValidExpenseTransition(before.status, nextStatus);
     const updatedRows = await client.query(
       "update app.expenses set status = $3 where org_id = $1 and id = $2 returning *",
       [ctx.orgId, expenseId, nextStatus],

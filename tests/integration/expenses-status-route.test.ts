@@ -83,6 +83,18 @@ describe("/api/expenses/:expenseId/status", () => {
     expect(response.status).toBe(400);
   });
 
+  it("rejects invalid transition from submitted directly to reimbursed", async () => {
+    const { expenseId } = await createExpenseForStatusFlow();
+    const request = new Request(`http://localhost/api/expenses/${expenseId}/status`, {
+      method: "PATCH",
+      headers: await authHeaders("owner", "owner-1", { "content-type": "application/json" }),
+      body: JSON.stringify({ status: "reimbursed" }),
+    });
+
+    const response = await UPDATE_EXPENSE_STATUS(request, { params: Promise.resolve({ expenseId }) });
+    expect(response.status).toBe(409);
+  });
+
   it("returns not found for unknown expense", async () => {
     const request = new Request("http://localhost/api/expenses/missing/status", {
       method: "PATCH",
