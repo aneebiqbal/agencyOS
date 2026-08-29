@@ -1,6 +1,7 @@
 "use client";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getActiveOrgId } from "@/lib/client-org";
 
 export class ApiClientError extends Error {
   readonly status: number;
@@ -31,6 +32,10 @@ export async function authFetch(input: string, init: RequestInit = {}, timeoutMs
 
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${token}`);
+  const activeOrgId = getActiveOrgId();
+  if (activeOrgId) {
+    headers.set("x-org-id", activeOrgId);
+  }
 
   const response = await fetch(input, {
     ...init,

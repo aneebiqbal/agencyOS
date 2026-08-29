@@ -18,7 +18,7 @@ async function createFailedInvoiceId() {
 
   const timeRequest = new Request("http://localhost/api/time-entries", {
     method: "POST",
-    headers: await authHeaders("hr", "hr-1", {
+    headers: await authHeaders("owner", "owner-1", {
       "content-type": "application/json",
       "idempotency-key": "idem-retry-send-time",
     }),

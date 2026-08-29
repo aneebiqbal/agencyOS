@@ -12,7 +12,7 @@ export function WatermarkOverlay() {
       try {
         const me = await getMeCached();
         setError(null);
-        setStamp(`${me.userId} (${me.role})`);
+        setStamp(`${me.userId} (${me.role}) @ ${me.orgId}`);
       } catch {
         setError("Session unavailable");
         setStamp("");

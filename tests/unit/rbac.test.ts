@@ -17,19 +17,19 @@ const project = {
 };
 
 describe("project access control", () => {
-  it("grants core-role global access", () => {
-    expect(canAccessProject({ userId: "u1", role: "owner", orgId: "org-test-1" }, project, false)).toBe(
-      true,
-    );
-    expect(canAccessProject({ userId: "u2", role: "hr", orgId: "org-test-1" }, project, false)).toBe(
-      true,
-    );
+  it("grants access for explicit project members", () => {
+    expect(canAccessProject({ userId: "u1", role: "owner", orgId: "org-test-1" }, project, true)).toBe(true);
+    expect(canAccessProject({ userId: "u2", role: "hr", orgId: "org-test-1" }, project, true)).toBe(true);
   });
 
-  it("keeps cto access independent of membership", () => {
-    expect(canAccessProject({ userId: "u3", role: "cto", orgId: "org-test-1" }, project, true)).toBe(
+  it("grants access for manager and creator without membership", () => {
+    expect(canAccessProject({ userId: "owner-1", role: "owner", orgId: "org-test-1" }, project, false)).toBe(
       true,
     );
-    expect(canAccessProject({ userId: "u3", role: "cto", orgId: "org-test-1" }, project, false)).toBe(true);
+    expect(canAccessProject({ userId: "cto-1", role: "cto", orgId: "org-test-1" }, project, false)).toBe(true);
+  });
+
+  it("denies access for non-members who are not manager or creator", () => {
+    expect(canAccessProject({ userId: "hr-1", role: "hr", orgId: "org-test-1" }, project, false)).toBe(false);
   });
 });

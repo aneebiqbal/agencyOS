@@ -7,7 +7,7 @@ import { WatermarkOverlay } from "@/components/watermark-overlay";
 
 export function ClientOverlays() {
   const pathname = usePathname();
-  const skipConfidentialityGate = pathname === "/login" || pathname === "/admin";
+  const skipConfidentialityGate = pathname === "/" || pathname === "/login" || pathname === "/admin";
 
   return (
     <>

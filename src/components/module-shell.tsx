@@ -9,7 +9,7 @@ const NAV_SECTIONS = [
   {
     label: "Operate",
     items: [
-      ["Dashboard", "/"],
+      ["Dashboard", "/workspace"],
       ["Sales", "/sales"],
       ["Projects", "/projects"],
       ["Employees", "/employees"],
@@ -37,7 +37,7 @@ const NAV_SECTIONS = [
 ] as const;
 
 const PAGE_PLAYBOOK: Record<string, { title: string; steps: string[]; actions: Array<{ label: string; href: string }> }> = {
-  "/": {
+  "/workspace": {
     title: "Daily Operator Loop",
     steps: ["Check alerts and pending approvals", "Review cash, payroll, and run-rate", "Resolve one blocker in each team"],
     actions: [
@@ -91,7 +91,7 @@ export function ModuleShell({ title, description, actions, children }: ModuleShe
   const playbook = PAGE_PLAYBOOK[pathname] ?? {
     title: "Module Playbook",
     steps: ["Review current queue", "Complete required actions", "Record next follow-up decision"],
-    actions: [{ label: "Back to Dashboard", href: "/" }],
+    actions: [{ label: "Back to Dashboard", href: "/workspace" }],
   };
 
   return (
@@ -104,8 +104,8 @@ export function ModuleShell({ title, description, actions, children }: ModuleShe
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Agency OS</p>
                 <p className="mt-1 text-base font-semibold tracking-tight text-ink">Operations Console</p>
               </div>
-              <Link href="/" className="btn-secondary px-3 py-1.5 text-[12px]">
-                Home
+              <Link href="/workspace" className="btn-secondary px-3 py-1.5 text-[12px]">
+                Workspace
               </Link>
             </div>
             <p className="mt-3 text-xs leading-5 text-muted">One control plane for revenue, delivery, finance, and people operations.</p>

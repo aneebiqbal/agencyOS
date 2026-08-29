@@ -19,10 +19,11 @@ describe("auxiliary route readiness", () => {
       }),
     );
     const body = await readJson(response);
-    const data = body.data as { userId: string; role: string };
+    const data = body.data as { userId: string; role: string; orgId: string; availableOrgIds: string[] };
     expect(response.status).toBe(200);
     expect(data.userId).toBe("owner-1");
     expect(data.role).toBe("owner");
+    expect(data.availableOrgIds).toContain(data.orgId);
   });
 
   it("rejects unauthorized /api/me", async () => {

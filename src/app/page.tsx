@@ -1,226 +1,110 @@
-"use client";
-
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { ModuleShell } from "@/components/module-shell";
-import { ErrorState, EmptyState, LoadingState } from "@/components/ui/states";
-import { StatusBadge } from "@/components/ui/status-badge";
-import { ApiClientError, authJson } from "@/lib/client-api";
-import { formatCurrencyCents, formatDateTime } from "@/lib/format";
+import type { Metadata } from "next";
 
-interface Lead {
-  id: string;
-  stage: string;
-}
+export const metadata: Metadata = {
+  title: "Agency OS | Revenue to Cash Operations Platform",
+  description:
+    "Agency OS unifies sales pipeline, project delivery, time, expenses, invoicing, and executive finance visibility for modern service companies.",
+  openGraph: {
+    title: "Agency OS",
+    description:
+      "One operating system for service-company growth: capture demand, run delivery, and close revenue into cash with full control.",
+    type: "website",
+  },
+};
 
-interface Project {
-  id: string;
-  clientName: string;
-  status: string;
-}
+const JOURNEY_STEPS = [
+  {
+    title: "Capture demand",
+    text: "Sales teams track leads, qualify pipeline, and convert won opportunities into project-ready delivery plans.",
+  },
+  {
+    title: "Run delivery",
+    text: "Operations teams manage staffing, project budgets, and timeline drift across active client work.",
+  },
+  {
+    title: "Close the loop",
+    text: "Finance teams automate invoicing, approvals, payroll context, and margin visibility from one control surface.",
+  },
+] as const;
 
-interface Expense {
-  id: string;
-  status: string;
-  amountCents: number;
-}
+const PROOF_POINTS = [
+  "Real-time KPI and audit visibility",
+  "Strict role model with core-account provisioning",
+  "Built-in financial controls and approval guardrails",
+  "Unified execution across revenue, delivery, and cash",
+] as const;
 
-interface FinanceSummary {
-  revenueInCents: number;
-  payrollOutCents: number;
-  expenseOutCents: number;
-  netMarginCents: number;
-}
-
-interface AuditLog {
-  id: string;
-  action: string;
-  timestampUtc: string;
-}
-
-function monthRange() {
-  const now = new Date();
-  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
-  const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999));
-  return {
-    fromUtc: from.toISOString(),
-    toUtc: to.toISOString(),
-  };
-}
-
-export default function DashboardPage() {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [finance, setFinance] = useState<FinanceSummary | null>(null);
-  const [audit, setAudit] = useState<AuditLog[]>([]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        setLoading(true);
-        setError(null);
-        try {
-          const range = monthRange();
-          const [leadRows, projectRows, expenseRows, financeRow, auditRows] = await Promise.all([
-            authJson<Lead[]>("/api/leads"),
-            authJson<Project[]>("/api/projects"),
-            authJson<Expense[]>("/api/expenses/list"),
-            authJson<FinanceSummary>(
-              `/api/finance/summary?fromUtc=${encodeURIComponent(range.fromUtc)}&toUtc=${encodeURIComponent(range.toUtc)}`,
-            ),
-            authJson<AuditLog[]>("/api/audit-logs"),
-          ]);
-          setLeads(leadRows);
-          setProjects(projectRows);
-          setExpenses(expenseRows);
-          setFinance(financeRow);
-          setAudit(auditRows.slice(0, 5));
-          setLoading(false);
-        } catch (cause) {
-          setError(cause instanceof ApiClientError ? cause.message : "Could not load dashboard data.");
-          setLoading(false);
-        }
-      })();
-    }, 0);
-
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  const pendingExpenses = expenses.filter((item) => item.status === "submitted").length;
-  const openLeads = leads.filter((item) => item.stage !== "won" && item.stage !== "lost").length;
-  const activeProjects = projects.filter((project) => project.status === "active").length;
-  const wonLeads = leads.filter((item) => item.stage === "won").length;
-
+export default function LandingPage() {
   return (
-    <ModuleShell
-      title="Operations Command Center"
-      description="Run daily execution with a clear view of pipeline momentum, delivery load, cash movement, and team activity."
-    >
-      {error ? <ErrorState message={error} /> : null}
-      {loading ? <LoadingState label="Loading dashboard metrics and activity..." /> : null}
-
-      {!loading && finance ? (
-        <section className="card overflow-hidden bg-gradient-to-r from-slate-50 via-white to-emerald-50">
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:items-center">
+    <div className="app-bg min-h-screen">
+      <main className="mx-auto w-full max-w-[1300px] px-4 py-5 md:px-6 md:py-8">
+        <section className="card overflow-hidden border-border/80 bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900 text-slate-50">
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] lg:items-end">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Monthly Executive Snapshot</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-ink">{formatCurrencyCents(finance.netMarginCents)} net margin this month</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-                Revenue is at {formatCurrencyCents(finance.revenueInCents)} with payroll and approved operating expenses reflected in real time.
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-200">Agency OS</p>
+              <h1 className="mt-3 max-w-4xl text-4xl font-semibold leading-tight tracking-[-0.03em] md:text-5xl">
+                The operating system for modern service companies.
+              </h1>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-200 md:text-base">
+                Replace fragmented spreadsheets and disconnected tools with one command layer for pipeline, projects, people, expenses,
+                invoicing, payroll context, and executive visibility.
               </p>
+              <div className="mt-6 flex flex-wrap gap-2">
+                <Link href="/login?mode=demo&next=%2Fworkspace%3Fdemo%3D1" className="btn">
+                  Book live demo access
+                </Link>
+                <Link href="/workspace" className="btn-secondary border-white/35 bg-white/10 text-white hover:bg-white/20">
+                  Enter workspace
+                </Link>
+              </div>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
-              <Link href="/finance" className="btn text-center">
-                Open finance command
-              </Link>
-              <Link href="/expenses" className="btn-secondary text-center">
-                Review expense queue
-              </Link>
-            </div>
-          </div>
-        </section>
-      ) : null}
 
-      {!loading && finance ? (
-        <section className="kpi-grid">
-          {[
-            ["Revenue (month)", formatCurrencyCents(finance.revenueInCents)],
-            ["Payroll cost", formatCurrencyCents(finance.payrollOutCents)],
-            ["Expense outflow", formatCurrencyCents(finance.expenseOutCents)],
-            ["Net margin", formatCurrencyCents(finance.netMarginCents)],
-          ].map(([label, value]) => (
-            <div key={label} className="card">
-              <p className="text-xs uppercase tracking-[0.12em] text-muted">{label}</p>
-              <p className="num mt-2 text-[28px] font-semibold text-ink">{value}</p>
-            </div>
-          ))}
-        </section>
-      ) : null}
-
-      <section className="grid gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-        <div className="card">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-ink">Priority queue</h2>
-            <Link href="/finance" className="text-sm text-accent hover:text-accent-strong">
-              View full finance feed
-            </Link>
-          </div>
-          <p className="mt-1 text-xs text-muted">Use this list as your first review pass before assigning workstreams.</p>
-          {!loading && leads.length === 0 && projects.length === 0 && expenses.length === 0 ? (
-            <EmptyState
-              title="No operating data yet"
-              guidance="Start by adding a lead, then convert it to a project so time and expense tracking can begin."
-            />
-          ) : (
-            <div className="mt-3 grid gap-2 text-sm">
-              <div className="card-muted flex items-center justify-between">
-                <span>Open leads requiring qualification</span>
-                <span className="num font-semibold">{openLeads}</span>
-              </div>
-              <div className="card-muted flex items-center justify-between">
-                <span>Submitted expenses awaiting review</span>
-                <span className="num font-semibold">{pendingExpenses}</span>
-              </div>
-              <div className="card-muted flex items-center justify-between">
-                <span>Active projects in delivery</span>
-                <span className="num font-semibold">{activeProjects}</span>
-              </div>
-              <div className="card-muted flex items-center justify-between">
-                <span>Won leads ready for kickoff controls</span>
-                <span className="num font-semibold">{wonLeads}</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="card">
-          <h2 className="text-sm font-semibold text-ink">Recent activity</h2>
-          <p className="mt-1 text-xs text-muted">Immutable audit events from finance, staffing, project, and sales updates.</p>
-          {!loading && audit.length === 0 ? (
-            <EmptyState title="No audit activity yet" guidance="Actions appear here after writes to operational records." />
-          ) : (
-            <div className="mt-3 space-y-2 text-sm">
-              {audit.map((entry) => (
-                <div key={entry.id} className="card-muted flex items-center justify-between">
-                  <span>{entry.action}</span>
-                  <span className="text-xs text-muted">{formatDateTime(entry.timestampUtc)}</span>
+            <div className="grid gap-2 text-sm">
+              {PROOF_POINTS.map((item) => (
+                <div key={item} className="rounded-lg border border-white/25 bg-white/10 px-3 py-2 backdrop-blur-sm">
+                  {item}
                 </div>
               ))}
             </div>
-          )}
-        </div>
-      </section>
-
-      <section className="card">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-ink">Project queue preview</h2>
-          <Link href="/projects" className="btn-secondary">
-            Open project workspace
-          </Link>
-        </div>
-        {!loading && projects.length === 0 ? (
-          <EmptyState title="No projects to display" guidance="Create or convert a lead to start delivery tracking." />
-        ) : !loading ? (
-          <div className="mt-3 grid gap-2 md:grid-cols-2">
-            {projects.slice(0, 6).map((project) => (
-              <Link
-                key={project.id}
-                href="/projects"
-                className="rounded-md border border-border bg-muted px-3 py-3 text-sm transition hover:-translate-y-0.5 hover:bg-white"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-ink">{project.clientName}</span>
-                  <StatusBadge status={project.status} />
-                </div>
-                <p className="mt-1 text-xs text-muted">Project ID: {project.id}</p>
-              </Link>
-            ))}
           </div>
-        ) : null}
-      </section>
-    </ModuleShell>
+        </section>
+
+        <section className="mt-4 grid gap-3 md:grid-cols-3">
+          {JOURNEY_STEPS.map((step, index) => (
+            <article key={step.title} className="card">
+              <p className="num text-xs uppercase tracking-[0.1em] text-muted">0{index + 1}</p>
+              <h2 className="mt-2 text-lg font-semibold text-ink">{step.title}</h2>
+              <p className="mt-2 text-sm leading-6 text-muted">{step.text}</p>
+            </article>
+          ))}
+        </section>
+
+        <section className="mt-4 card grid gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] md:items-center">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Investor Narrative</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-ink">One platform. One data model. One execution rhythm.</h2>
+            <p className="mt-3 text-sm leading-6 text-muted">
+              Agency OS turns service operations into a measurable system: demand intake, delivery execution, and financial outcomes all
+              roll up in real time.
+            </p>
+          </div>
+          <div className="rounded-lg border border-border bg-muted/70 p-4">
+            <p className="text-sm font-semibold text-ink">Ready for the walkthrough?</p>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              Sign in to run the full demo path: lead capture, deal conversion, project staffing, invoice issue, and paid-state closeout.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link href="/login?mode=demo&next=%2Fworkspace%3Fdemo%3D1" className="btn">
+                Open operator login
+              </Link>
+              <Link href="/workspace" className="btn-secondary">
+                Go to dashboard
+              </Link>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }

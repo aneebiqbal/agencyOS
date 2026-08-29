@@ -17,22 +17,15 @@ const appMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://agencyos.internal"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://agencyos.app"),
   title: {
     default: "Agency OS",
     template: "%s | Agency OS",
   },
   description: "Operational command center for sales, delivery, people, payroll, and finance teams.",
   robots: {
-    index: false,
-    follow: false,
-    googleBot: {
-      index: false,
-      follow: false,
-      "max-image-preview": "none",
-      "max-snippet": -1,
-      "max-video-preview": -1,
-    },
+    index: true,
+    follow: true,
   },
   openGraph: {
     title: "Agency OS",

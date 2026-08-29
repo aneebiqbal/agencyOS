@@ -6,6 +6,7 @@ export interface MePayload {
   userId: string;
   role: "owner" | "hr" | "cto";
   orgId: string;
+  availableOrgIds?: string[];
 }
 
 const ME_CACHE_TTL_MS = 30_000;

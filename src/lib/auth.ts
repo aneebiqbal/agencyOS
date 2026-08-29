@@ -270,76 +270,129 @@ function asRole(value: string): UserRole {
   throw forbidden("User role is not provisioned for Agency OS.");
 }
 
-let lastCoreAccessValidationMs = 0;
 const CORE_ACCESS_CHECK_INTERVAL_MS = 60_000;
-let coreAccessWarningShown = false;
+const REQUIRED_CORE_ROLES: UserRole[] = ["owner", "hr", "cto"];
+const lastCoreAccessValidationMsByScope = new Map<string, number>();
+const warnedCoreAccessScopes = new Set<string>();
 
-async function assertCoreAccessModel(source: "startup" | "request"): Promise<void> {
+function coreAccessError(source: "startup" | "request", message: string): Error {
+  return source === "request" ? conflict(message) : new Error(message);
+}
+
+function noteCoreAccessWarning(scopeKey: string, source: "startup" | "request", message: string): void {
+  if (source === "request" || process.env.NODE_ENV === "production") {
+    throw coreAccessError(source, message);
+  }
+  if (warnedCoreAccessScopes.has(scopeKey) && source !== "startup") {
+    return;
+  }
+  warnedCoreAccessScopes.add(scopeKey);
+  console.warn(message);
+}
+
+function assertExactCoreRolesForScope(
+  source: "startup" | "request",
+  scopeKey: string,
+  scopeLabel: string,
+  roles: string[],
+): void {
+  if (roles.length !== REQUIRED_CORE_ROLES.length) {
+    noteCoreAccessWarning(
+      scopeKey,
+      source,
+      `Core access model violation (${scopeLabel}): exactly 3 active accounts are required.`,
+    );
+    return;
+  }
+
+  const counts = new Map<UserRole, number>(REQUIRED_CORE_ROLES.map((role) => [role, 0]));
+
+  for (const role of roles) {
+    if (role !== "owner" && role !== "hr" && role !== "cto") {
+      noteCoreAccessWarning(
+        scopeKey,
+        source,
+        `Core access model violation (${scopeLabel}): invalid role detected outside owner/hr/cto.`,
+      );
+      return;
+    }
+    counts.set(role, (counts.get(role) ?? 0) + 1);
+  }
+
+  for (const role of REQUIRED_CORE_ROLES) {
+    if ((counts.get(role) ?? 0) !== 1) {
+      noteCoreAccessWarning(
+        scopeKey,
+        source,
+        `Core access model violation (${scopeLabel}): each core role must be present exactly once.`,
+      );
+      return;
+    }
+  }
+}
+
+async function assertCoreAccessModel(source: "startup" | "request", orgId?: string): Promise<void> {
+  const scopeKey = orgId ? `org:${orgId}` : "all-orgs";
   const now = Date.now();
-  if (now - lastCoreAccessValidationMs < CORE_ACCESS_CHECK_INTERVAL_MS) {
+  const lastValidationMs = lastCoreAccessValidationMsByScope.get(scopeKey) ?? 0;
+  if (now - lastValidationMs < CORE_ACCESS_CHECK_INTERVAL_MS) {
     return;
   }
 
   if (!isPostgresConfigured()) {
-    const keys = Object.keys(memoryEmployeeProvisioning);
-    if (keys.length !== 3) {
-      const error =
-        source === "request"
-          ? conflict("Core access model violation: exactly 3 active accounts are required.")
-          : new Error("Core access model violation: exactly 3 active accounts are required.");
-      if (process.env.NODE_ENV === "production") {
-        throw error;
+    const rows = Object.values(memoryEmployeeProvisioning);
+    if (orgId) {
+      const roles = rows.filter((row) => row.orgId === orgId).map((row) => row.role);
+      assertExactCoreRolesForScope(source, scopeKey, `org ${orgId}`, roles);
+    } else {
+      const grouped = new Map<string, string[]>();
+      for (const row of rows) {
+        grouped.set(row.orgId, [...(grouped.get(row.orgId) ?? []), row.role]);
       }
-      if (!coreAccessWarningShown || source === "startup") {
-        coreAccessWarningShown = true;
-        console.warn(error.message);
+      for (const [scopedOrgId, roles] of grouped.entries()) {
+        assertExactCoreRolesForScope(source, `org:${scopedOrgId}`, `org ${scopedOrgId}`, roles);
       }
-      return;
     }
-    lastCoreAccessValidationMs = now;
+    lastCoreAccessValidationMsByScope.set(scopeKey, now);
     return;
   }
 
-  const rows = await querySystem<{ user_id: string; role: string; active_count: string }>(
-    `select user_id, role::text as role,
-            (select count(*)::text from app.employees where deleted_at_utc is null) as active_count
+  if (orgId) {
+    const rows = await querySystem<{ role: string }>(
+      `select role::text as role
+         from app.employees
+        where org_id = $1 and deleted_at_utc is null`,
+      [orgId],
+    );
+    assertExactCoreRolesForScope(
+      source,
+      scopeKey,
+      `org ${orgId}`,
+      rows.map((row) => row.role),
+    );
+    lastCoreAccessValidationMsByScope.set(scopeKey, now);
+    return;
+  }
+
+  const rows = await querySystem<{ org_id: string; role: string }>(
+    `select org_id, role::text as role
        from app.employees
-      where deleted_at_utc is null`,
+      where deleted_at_utc is null
+      order by org_id asc`,
   );
 
-  if (rows.length !== 3) {
-    const error =
-      source === "request"
-        ? conflict("Core access model violation: exactly 3 active accounts are required.")
-        : new Error("Core access model violation: exactly 3 active accounts are required.");
-    if (process.env.NODE_ENV === "production") {
-      throw error;
-    }
-    if (!coreAccessWarningShown || source === "startup") {
-      coreAccessWarningShown = true;
-      console.warn(error.message);
-    }
-    return;
-  }
-
+  const grouped = new Map<string, string[]>();
   for (const row of rows) {
-    if (row.role !== "owner" && row.role !== "hr" && row.role !== "cto") {
-      const error =
-        source === "request"
-          ? conflict("Core access model violation: invalid role detected outside owner/hr/cto.")
-          : new Error("Core access model violation: invalid role detected outside owner/hr/cto.");
-      if (process.env.NODE_ENV === "production") {
-        throw error;
-      }
-      if (!coreAccessWarningShown || source === "startup") {
-        coreAccessWarningShown = true;
-        console.warn(error.message);
-      }
-      return;
-    }
+    grouped.set(row.org_id, [...(grouped.get(row.org_id) ?? []), row.role]);
+  }
+  for (const [scopedOrgId, roles] of grouped.entries()) {
+    assertExactCoreRolesForScope(source, `org:${scopedOrgId}`, `org ${scopedOrgId}`, roles);
+  }
+  if (grouped.size === 0) {
+    noteCoreAccessWarning("all-orgs", source, "Core access model violation: no active organizations provisioned.");
   }
 
-  lastCoreAccessValidationMs = now;
+  lastCoreAccessValidationMsByScope.set(scopeKey, now);
 }
 
 function bootCoreAccessModelGuard(): void {
@@ -349,8 +402,8 @@ function bootCoreAccessModelGuard(): void {
       console.error(`Core access model startup warning: ${message}`);
       return;
     }
-    if (!coreAccessWarningShown) {
-      coreAccessWarningShown = true;
+    if (!warnedCoreAccessScopes.has("startup")) {
+      warnedCoreAccessScopes.add("startup");
       console.warn(message);
     }
   });
@@ -383,14 +436,68 @@ async function assertSessionNotRevoked(orgId: string, userId: string, jti: strin
   }
 }
 
+function getRequestedOrgId(request: Request): string | null {
+  const headerValue = request.headers.get("x-org-id")?.trim();
+  if (headerValue) {
+    return headerValue;
+  }
+  const url = new URL(request.url);
+  const queryValue = url.searchParams.get("orgId")?.trim();
+  return queryValue && queryValue.length > 0 ? queryValue : null;
+}
+
+function selectMembership(
+  memberships: Array<{ orgId: string; role: UserRole }>,
+  requestedOrgId: string | null,
+): { orgId: string; role: UserRole } {
+  if (memberships.length === 0) {
+    throw forbidden("User is authenticated but not provisioned in employees table.");
+  }
+
+  if (requestedOrgId) {
+    const selected = memberships.find((membership) => membership.orgId === requestedOrgId);
+    if (!selected) {
+      throw forbidden("Requested org is not provisioned for this user.");
+    }
+    return selected;
+  }
+
+  if (memberships.length > 1) {
+    throw forbidden("User is provisioned in multiple orgs; set x-org-id header or orgId query parameter.");
+  }
+
+  return memberships[0];
+}
+
+async function listMembershipsForUser(userId: string): Promise<Array<{ orgId: string; role: UserRole }>> {
+  if (!isPostgresConfigured()) {
+    const provisioned = memoryEmployeeProvisioning[userId];
+    if (!provisioned) {
+      return [];
+    }
+    return [{ orgId: provisioned.orgId, role: provisioned.role }];
+  }
+
+  const rows = await querySystem<{ org_id: string; role: string }>(
+    `select org_id, role::text as role
+       from app.employees
+      where user_id = $1 and deleted_at_utc is null
+      order by created_at_utc asc`,
+    [userId],
+  );
+  return rows.map((row) => ({ orgId: row.org_id, role: asRole(row.role) }));
+}
+
+export async function listProvisionedOrgIdsForUser(userId: string): Promise<string[]> {
+  const memberships = await listMembershipsForUser(userId);
+  return [...new Set(memberships.map((membership) => membership.orgId))];
+}
+
 export async function getSessionUser(
   request: Request,
   options?: { allowCoreAccessViolation?: boolean },
 ): Promise<SessionUser> {
   assertAuthWiringAtStartup();
-  if (!options?.allowCoreAccessViolation) {
-    await assertCoreAccessModel("request");
-  }
   const verified = await verifyWithRefresh(request);
   const userId = verified.payload.sub;
 
@@ -399,13 +506,15 @@ export async function getSessionUser(
   }
 
   if (!isPostgresConfigured()) {
-    const provisioned = memoryEmployeeProvisioning[userId];
-    if (!provisioned) {
-      throw forbidden("User is authenticated but not provisioned in employees table.");
+    const memberships = await listMembershipsForUser(userId);
+    const selected = selectMembership(memberships, getRequestedOrgId(request));
+
+    if (!options?.allowCoreAccessViolation) {
+      await assertCoreAccessModel("request", selected.orgId);
     }
 
     await assertSessionNotRevoked(
-      provisioned.orgId,
+      selected.orgId,
       userId,
       verified.payload.jti ? String(verified.payload.jti) : null,
       verified.payload.exp ?? null,
@@ -413,31 +522,18 @@ export async function getSessionUser(
 
     return {
       userId,
-      role: provisioned.role,
-      orgId: provisioned.orgId,
+      role: selected.role,
+      orgId: selected.orgId,
     };
   }
 
-  // Assumption: each internal auth user is provisioned into exactly one active org for this phase.
-  const employeeRows = await querySystem<{ org_id: string; role: string }>(
-    `select org_id, role::text as role
-       from app.employees
-      where user_id = $1 and deleted_at_utc is null
-      order by created_at_utc asc`,
-    [userId],
-  );
-
-  if (employeeRows.length === 0) {
-    throw forbidden("User is authenticated but not provisioned in employees table.");
+  const memberships = await listMembershipsForUser(userId);
+  const employee = selectMembership(memberships, getRequestedOrgId(request));
+  if (!options?.allowCoreAccessViolation) {
+    await assertCoreAccessModel("request", employee.orgId);
   }
-
-  if (employeeRows.length > 1) {
-    throw forbidden("User is provisioned in multiple orgs; explicit org selection is required.");
-  }
-
-  const employee = employeeRows[0];
   await assertSessionNotRevoked(
-    employee.org_id,
+    employee.orgId,
     userId,
     verified.payload.jti ? String(verified.payload.jti) : null,
     verified.payload.exp ?? null,
@@ -445,8 +541,8 @@ export async function getSessionUser(
 
   return {
     userId,
-    role: asRole(employee.role),
-    orgId: employee.org_id,
+    role: employee.role,
+    orgId: employee.orgId,
   };
 }
 
@@ -459,27 +555,21 @@ export async function signOutSession(request: Request): Promise<void> {
   }
 
   if (!isPostgresConfigured()) {
-    const provisioned = memoryEmployeeProvisioning[userId];
-    if (!provisioned) {
+    const memberships = await listMembershipsForUser(userId);
+    const selected = selectMembership(memberships, getRequestedOrgId(request));
+    if (!selected) {
       throw unauthorized("Authenticated user is not provisioned.");
     }
     const jti = verified.payload.jti ? String(verified.payload.jti) : null;
     if (jti) {
-      revokedMemoryTokens.add(`${provisioned.orgId}:${userId}:${jti}`);
+      revokedMemoryTokens.add(`${selected.orgId}:${userId}:${jti}`);
     }
     return;
   }
 
-  const rows = await querySystem<{ org_id: string }>(
-    "select org_id from app.employees where user_id = $1 and deleted_at_utc is null limit 1",
-    [userId],
-  );
-
-  if (rows.length === 0) {
-    throw unauthorized("Authenticated user is not provisioned.");
-  }
-
-  const orgId = rows[0].org_id;
+  const memberships = await listMembershipsForUser(userId);
+  const selected = selectMembership(memberships, getRequestedOrgId(request));
+  const orgId = selected.orgId;
   const jti = verified.payload.jti ? String(verified.payload.jti) : null;
   const exp = verified.payload.exp;
   if (jti && exp) {
@@ -493,8 +583,8 @@ export async function signOutSession(request: Request): Promise<void> {
 }
 
 export function __resetAuthCachesForTests(): void {
-  lastCoreAccessValidationMs = 0;
-  coreAccessWarningShown = false;
+  lastCoreAccessValidationMsByScope.clear();
+  warnedCoreAccessScopes.clear();
   jwksCache.verifier = null;
   jwksCache.fetchedAtMs = 0;
   jwksCache.expiresAtMs = 0;

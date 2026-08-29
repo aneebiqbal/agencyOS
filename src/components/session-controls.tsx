@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { clearActiveOrgId, setActiveOrgId } from "@/lib/client-org";
 import { clearMeCache, getMeCached } from "@/lib/client-me";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
@@ -11,6 +12,8 @@ export function SessionControls() {
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
   const [userLabel, setUserLabel] = useState<string | null>(null);
+  const [activeOrgId, setActiveOrgIdState] = useState<string | null>(null);
+  const [orgOptions, setOrgOptions] = useState<string[]>([]);
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
@@ -25,9 +28,14 @@ export function SessionControls() {
 
       try {
         const me = await getMeCached();
-        setUserLabel(`${me.userId} (${me.role})`);
+        setUserLabel(`${me.userId} (${me.role}) @ ${me.orgId}`);
+        setActiveOrgIdState(me.orgId);
+        setOrgOptions(me.availableOrgIds ?? [me.orgId]);
+        setActiveOrgId(me.orgId);
       } catch {
         setUserLabel(null);
+        setActiveOrgIdState(null);
+        setOrgOptions([]);
       }
 
       setLoading(false);
@@ -61,8 +69,11 @@ export function SessionControls() {
     }
 
     await supabase.auth.signOut();
+    clearActiveOrgId();
     clearMeCache();
     setUserLabel(null);
+    setActiveOrgIdState(null);
+    setOrgOptions([]);
     router.push("/login");
     router.refresh();
     setSigningOut(false);
@@ -97,6 +108,28 @@ export function SessionControls() {
         <span className="status-badge status-info text-[11px]">
           {userLabel}
         </span>
+        {orgOptions.length > 1 ? (
+          <label className="inline-flex items-center gap-1 text-xs text-muted">
+            Org
+            <select
+              value={activeOrgId ?? ""}
+              onChange={(event) => {
+                const nextOrgId = event.target.value;
+                setActiveOrgId(nextOrgId);
+                setActiveOrgIdState(nextOrgId);
+                clearMeCache();
+                router.refresh();
+              }}
+              className="rounded-md border border-border bg-white px-2 py-1 text-xs text-ink"
+            >
+              {orgOptions.map((orgId) => (
+                <option key={orgId} value={orgId}>
+                  {orgId}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <button
           type="button"
           onClick={signOut}
