@@ -15,6 +15,7 @@
     "db:seed:test": "node scripts/seed-test-data.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.4",
     "dotenv": "^17.4.2",
     "jose": "^6.2.10",
     "next": "16.3.3",

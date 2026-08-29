@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { authFetch } from "@/lib/client-api";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 interface MePayload {
   data?: {
@@ -17,19 +19,19 @@ export function SessionControls() {
   const [userLabel, setUserLabel] = useState<string | null>(null);
 
   useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+
     async function load() {
-      const token = window.sessionStorage.getItem("agency_access_token");
-      if (!token) {
+      const { data, error } = await supabase.auth.getSession();
+      if (error || !data.session) {
         setLoading(false);
         setUserLabel(null);
         return;
       }
 
       try {
-        const response = await fetch("/api/me", { headers: { authorization: `Bearer ${token}` } });
+        const response = await authFetch("/api/me");
         if (!response.ok) {
-          window.sessionStorage.removeItem("agency_access_token");
-          window.sessionStorage.removeItem("agency_refresh_token");
           setUserLabel(null);
           setLoading(false);
           return;
@@ -46,23 +48,32 @@ export function SessionControls() {
     }
 
     void load();
+
+    const { data: listener } = supabase.auth.onAuthStateChange(() => {
+      void load();
+    });
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   async function signOut() {
-    const token = window.sessionStorage.getItem("agency_access_token");
-    if (token) {
-      try {
+    const supabase = getSupabaseBrowserClient();
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (token) {
         await fetch("/api/auth/signout", {
           method: "POST",
           headers: { authorization: `Bearer ${token}` },
         });
-      } catch {
-        // no-op
       }
+    } catch {
+      // no-op
     }
 
-    window.sessionStorage.removeItem("agency_access_token");
-    window.sessionStorage.removeItem("agency_refresh_token");
+    await supabase.auth.signOut();
     setUserLabel(null);
     router.push("/login");
     router.refresh();

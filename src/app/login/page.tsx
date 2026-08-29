@@ -3,15 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-
-interface LoginResponse {
-  ok: boolean;
-  data?: {
-    accessToken: string;
-    refreshToken: string | null;
-  };
-  message?: string;
-}
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,24 +18,12 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const body = (await response.json()) as LoginResponse;
-      if (!response.ok || !body.data?.accessToken) {
-        setError(body.message ?? "Login failed.");
+      const supabase = getSupabaseBrowserClient();
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError || !data.session) {
+        setError(signInError?.message ?? "Login failed.");
         setPending(false);
         return;
-      }
-
-      window.sessionStorage.setItem("agency_access_token", body.data.accessToken);
-      if (body.data.refreshToken) {
-        window.sessionStorage.setItem("agency_refresh_token", body.data.refreshToken);
-      } else {
-        window.sessionStorage.removeItem("agency_refresh_token");
       }
 
       router.push("/");
