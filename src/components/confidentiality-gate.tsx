@@ -1,6 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ApiClientError, authFetch } from "@/lib/client-api";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 interface StatusPayload {
   needsAcknowledgement: boolean;
@@ -13,58 +16,108 @@ export function ConfidentialityGate() {
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [checked, setChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [hasSession, setHasSession] = useState(false);
+  const isNoticeMissing = (error ?? "").toLowerCase().includes("not configured");
 
-  useEffect(() => {
-    async function loadStatus() {
-      const sessionToken = window.sessionStorage.getItem("agency_access_token");
-      if (!sessionToken) {
+  async function loadStatus(): Promise<void> {
+    setLoading(true);
+    setError(null);
+
+    const supabase = getSupabaseBrowserClient();
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+      setError(sessionError.message);
+      setLoading(false);
+      return;
+    }
+
+    const sessionToken = data.session?.access_token ?? null;
+    if (!sessionToken) {
+      setHasSession(false);
+      setStatus(null);
+      setLoading(false);
+      return;
+    }
+
+    setHasSession(true);
+
+    try {
+      const response = await authFetch("/api/confidentiality/status", { method: "GET" }, 10_000);
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { message?: string };
+        setError(body.message ?? "Unable to load confidentiality status.");
         setLoading(false);
         return;
       }
-
-      setToken(sessionToken);
-
-      try {
-        const response = await fetch("/api/confidentiality/status", {
-          headers: { authorization: `Bearer ${sessionToken}` },
-        });
-        const body = (await response.json()) as { data: StatusPayload };
-        setStatus(body.data);
-        setLoading(false);
-      } catch {
-        setError("Unable to load confidentiality status.");
-        setLoading(false);
+      const body = (await response.json()) as { data: StatusPayload };
+      setStatus(body.data);
+      setLoading(false);
+    } catch (cause) {
+      if (cause instanceof ApiClientError && cause.status === 401) {
+        setError("Please sign in to continue.");
+      } else {
+        setError("Confidentiality status request timed out or failed. Retry.");
       }
+      setLoading(false);
     }
+  }
 
-    void loadStatus();
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+    const timer = window.setTimeout(() => {
+      void loadStatus();
+    }, 0);
+
+    const openHandler = () => {
+      void loadStatus();
+    };
+    window.addEventListener("agencyos:open-confidentiality", openHandler);
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      void loadStatus();
+    });
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("agencyos:open-confidentiality", openHandler);
+      subscription.unsubscribe();
+    };
   }, []);
 
   async function acknowledge() {
-    if (!token || !status?.noticeVersion || !checked) {
+    if (!hasSession || !status?.noticeVersion || !checked) {
       return;
     }
-    const response = await fetch("/api/confidentiality/acknowledge", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ version: status.noticeVersion, acknowledged: true }),
-    });
-    if (response.ok) {
-      setStatus({ ...status, needsAcknowledgement: false });
-      return;
+
+    try {
+      const response = await authFetch(
+        "/api/confidentiality/acknowledge",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ version: status.noticeVersion, acknowledged: true }),
+        },
+        10_000,
+      );
+      if (response.ok) {
+        setStatus({ ...status, needsAcknowledgement: false });
+        return;
+      }
+      setError("Acknowledgement failed. Please retry.");
+    } catch {
+      setError("Acknowledgement request timed out. Please retry.");
     }
-    setError("Acknowledgement failed. Please retry.");
   }
 
   if (loading) {
     return <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 text-white">Loading...</div>;
   }
 
-  if (!token) {
+  if (!hasSession) {
     return null;
   }
 
@@ -74,6 +127,22 @@ export function ConfidentialityGate() {
         <div>
           <p className="text-lg font-semibold">Access blocked</p>
           <p className="mt-2 text-sm">{error}</p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                void loadStatus();
+              }}
+              className="rounded-md border border-white/40 px-4 py-2 text-sm font-semibold"
+            >
+              Retry
+            </button>
+            {isNoticeMissing ? (
+              <Link href="/admin" className="rounded-md border border-white/40 bg-white/10 px-4 py-2 text-sm font-semibold">
+                Open admin
+              </Link>
+            ) : null}
+          </div>
         </div>
       </div>
     );

@@ -1,25 +1,28 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { authFetch } from "@/lib/client-api";
 
 export function WatermarkOverlay() {
   const [stamp, setStamp] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadStamp() {
-      const token = window.sessionStorage.getItem("agency_access_token");
-      if (!token) {
-        return;
-      }
-
       try {
-        const res = await fetch("/api/me", { headers: { authorization: `Bearer ${token}` } });
+        const res = await authFetch("/api/me");
+        if (!res.ok) {
+          setStamp("");
+          return;
+        }
         const body = (await res.json()) as { data?: { userId?: string; role?: string } };
         const id = body.data?.userId ?? "unknown";
         const role = body.data?.role ?? "unknown";
+        setError(null);
         setStamp(`${id} (${role}) @ ${new Date().toISOString()}`);
       } catch {
-        setStamp(`unknown @ ${new Date().toISOString()}`);
+        setError("Session unavailable");
+        setStamp("");
       }
     }
 
@@ -27,6 +30,9 @@ export function WatermarkOverlay() {
   }, []);
 
   if (!stamp) {
+    if (error) {
+      return null;
+    }
     return null;
   }
 

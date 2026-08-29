@@ -1,58 +1,186 @@
+"use client";
+
 import Link from "next/link";
-import { SessionControls } from "@/components/session-controls";
+import { useEffect, useState } from "react";
+import { ModuleShell } from "@/components/module-shell";
+import { ErrorState, EmptyState, LoadingState } from "@/components/ui/states";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { ApiClientError, authJson } from "@/lib/client-api";
+import { formatCurrencyCents, formatDateTime } from "@/lib/format";
 
-export default function Home() {
+interface Lead {
+  id: string;
+  stage: string;
+}
+
+interface Project {
+  id: string;
+  clientName: string;
+  status: string;
+}
+
+interface Expense {
+  id: string;
+  status: string;
+  amountCents: number;
+}
+
+interface FinanceSummary {
+  revenueInCents: number;
+  payrollOutCents: number;
+  expenseOutCents: number;
+  netMarginCents: number;
+}
+
+interface AuditLog {
+  id: string;
+  action: string;
+  timestampUtc: string;
+}
+
+function monthRange() {
+  const now = new Date();
+  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+  const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+  return {
+    fromUtc: from.toISOString(),
+    toUtc: to.toISOString(),
+  };
+}
+
+export default function DashboardPage() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [finance, setFinance] = useState<FinanceSummary | null>(null);
+  const [audit, setAudit] = useState<AuditLog[]>([]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const range = monthRange();
+          const [leadRows, projectRows, expenseRows, financeRow, auditRows] = await Promise.all([
+            authJson<Lead[]>("/api/leads"),
+            authJson<Project[]>("/api/projects"),
+            authJson<Expense[]>("/api/expenses/list"),
+            authJson<FinanceSummary>(
+              `/api/finance/summary?fromUtc=${encodeURIComponent(range.fromUtc)}&toUtc=${encodeURIComponent(range.toUtc)}`,
+            ),
+            authJson<AuditLog[]>("/api/audit-logs"),
+          ]);
+          setLeads(leadRows);
+          setProjects(projectRows);
+          setExpenses(expenseRows);
+          setFinance(financeRow);
+          setAudit(auditRows.slice(0, 5));
+          setLoading(false);
+        } catch (cause) {
+          setError(cause instanceof ApiClientError ? cause.message : "Could not load dashboard data.");
+          setLoading(false);
+        }
+      })();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const pendingExpenses = expenses.filter((item) => item.status === "submitted").length;
+  const openLeads = leads.filter((item) => item.stage !== "won" && item.stage !== "lost").length;
+
   return (
-    <div className="page-bg min-h-screen p-6 md:p-12">
-      <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 rounded-2xl border border-border bg-surface p-6 shadow-sm md:p-8">
-        <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-sm font-semibold tracking-wider text-accent">AGENCY OS</p>
-            <h1 className="text-3xl font-semibold tracking-tight">MVP Control Center</h1>
-            <p className="mt-2 max-w-3xl text-sm text-zinc-700">
-              Boilerplate for sales, projects, time, expenses, invoicing, finance, payroll sync, performance,
-              and immutable audit trails.
-            </p>
-          </div>
-          <div className="flex flex-col items-start gap-2 md:items-end">
-            <div className="rounded-xl border border-border bg-surface-soft px-4 py-3 text-sm text-zinc-700">
-              No direct disbursement flows are enabled in this phase.
-            </div>
-            <SessionControls />
-          </div>
-        </header>
+    <ModuleShell
+      title="Operations Dashboard"
+      description="Daily control panel for pipeline, delivery, cash position, and operational risk signals."
+    >
+      {error ? <ErrorState message={error} /> : null}
+      {loading ? <LoadingState label="Loading dashboard metrics and activity..." /> : null}
 
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {!loading && finance ? (
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
-            ["Sales", "/sales"],
-            ["Projects", "/projects"],
-            ["Time", "/time"],
-            ["Expenses", "/expenses"],
-            ["CSV Imports", "/imports"],
-            ["Invoicing", "/invoicing"],
-            ["Finance", "/finance"],
-            ["Payroll", "/payroll"],
-            ["Performance", "/performance"],
-          ].map(([label, href]) => (
-            <Link
-              key={href}
-              href={href}
-              className="rounded-xl border border-border bg-white px-4 py-4 text-sm font-medium transition hover:-translate-y-0.5 hover:border-accent hover:shadow-sm"
-            >
-              {label}
-            </Link>
+            ["Revenue (month)", formatCurrencyCents(finance.revenueInCents)],
+            ["Payroll cost", formatCurrencyCents(finance.payrollOutCents)],
+            ["Expense outflow", formatCurrencyCents(finance.expenseOutCents)],
+            ["Net margin", formatCurrencyCents(finance.netMarginCents)],
+          ].map(([label, value]) => (
+            <div key={label} className="card">
+              <p className="text-xs uppercase tracking-[0.12em] text-muted">{label}</p>
+              <p className="num mt-2 text-[28px] font-semibold text-ink">{value}</p>
+            </div>
           ))}
         </section>
+      ) : null}
 
-        <section className="rounded-2xl border border-border bg-surface-soft p-4">
-          <h2 className="text-base font-semibold">Security assumptions in this boilerplate</h2>
-          <ul className="mt-2 space-y-2 text-sm text-zinc-700">
-            <li>Auth uses verified Supabase JWT bearer sessions, not client-supplied identity headers.</li>
-            <li>All write APIs are rate-limited and audit-logged.</li>
-            <li>Payroll route is read-only summary sync by design.</li>
-          </ul>
-        </section>
-      </main>
-    </div>
+      <section className="grid gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <div className="card">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-ink">What needs attention today</h2>
+            <Link href="/finance" className="text-sm text-accent hover:text-accent-strong">
+              Open finance
+            </Link>
+          </div>
+          {!loading && leads.length === 0 && projects.length === 0 && expenses.length === 0 ? (
+            <EmptyState
+              title="No operating data yet"
+              guidance="Start by adding a lead, then convert it to a project so time and expense tracking can begin."
+            />
+          ) : (
+            <div className="mt-3 grid gap-2 text-sm">
+              <div className="card-muted flex items-center justify-between">
+                <span>Open leads</span>
+                <span className="num font-semibold">{openLeads}</span>
+              </div>
+              <div className="card-muted flex items-center justify-between">
+                <span>Pending expenses</span>
+                <span className="num font-semibold">{pendingExpenses}</span>
+              </div>
+              <div className="card-muted flex items-center justify-between">
+                <span>Active projects</span>
+                <span className="num font-semibold">{projects.filter((p) => p.status === "active").length}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <h2 className="text-sm font-semibold text-ink">Recent activity</h2>
+          {audit.length === 0 ? (
+            <EmptyState title="No audit activity yet" guidance="Actions appear here after writes to operational records." />
+          ) : (
+            <div className="mt-3 space-y-2 text-sm">
+              {audit.map((entry) => (
+                <div key={entry.id} className="card-muted flex items-center justify-between">
+                  <span>{entry.action}</span>
+                  <span className="text-xs text-muted">{formatDateTime(entry.timestampUtc)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="card">
+        <h2 className="text-sm font-semibold text-ink">Quick records</h2>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {projects.slice(0, 6).map((project) => (
+            <Link
+              key={project.id}
+              href="/projects"
+              className="rounded-md border border-border bg-muted px-3 py-2 text-sm hover:bg-white"
+            >
+              <div className="flex items-center justify-between">
+                <span>{project.clientName}</span>
+                <StatusBadge status={project.status} />
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+    </ModuleShell>
   );
 }
