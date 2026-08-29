@@ -33,6 +33,7 @@ export default function Home() {
             ["Finance", "/finance"],
             ["Payroll", "/payroll"],
             ["Performance", "/performance"],
+            ["Admin", "/admin"],
           ].map(([label, href]) => (
             <Link
               key={href}
