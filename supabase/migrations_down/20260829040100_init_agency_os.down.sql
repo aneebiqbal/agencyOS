@@ -20,6 +20,7 @@ drop table if exists app.projects;
 drop table if exists app.leads;
 drop table if exists app.import_batch_rows;
 drop table if exists app.import_batches;
+drop table if exists app.staff_compensation;
 drop table if exists app.staff_members;
 drop table if exists app.employees;
 drop table if exists app.organizations;

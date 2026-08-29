@@ -89,6 +89,29 @@ export const updateExpenseStatusSchema = z.object({
   status: z.enum(["submitted", "approved", "reimbursed"]),
 });
 
+export const createStaffMemberSchema = z.object({
+  staffId: z.string().trim().min(1).max(120),
+  fullName: z.string().trim().min(1).max(120),
+  externalCode: z.string().trim().max(120).optional(),
+});
+
+export const upsertStaffCompensationSchema = z
+  .object({
+    employmentType: z.enum(["full_time", "part_time", "contractor"]),
+    annualSalaryCents: z.number().int().min(0).max(5_000_000_000).nullable().optional(),
+    hourlyRateCents: z.number().int().min(0).max(5_000_000).nullable().optional(),
+    currency: z.literal("USD").default("USD"),
+  })
+  .superRefine((value, ctx) => {
+    if (value.annualSalaryCents == null && value.hourlyRateCents == null) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Set annual salary or hourly rate.",
+        path: ["annualSalaryCents"],
+      });
+    }
+  });
+
 export const publishConfidentialityNoticeSchema = z.object({
   version: z.string().trim().min(1).max(40),
   noticeText: z.string().trim().min(20).max(10_000),

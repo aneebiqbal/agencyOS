@@ -11,6 +11,7 @@ import { calculateInvoiceTotals } from "@/lib/domain/invoice";
 import type {
   AuditLogEntry,
   Deal,
+  EmploymentType,
   Expense,
   Invoice,
   InvoiceLineItem,
@@ -19,6 +20,7 @@ import type {
   PerformanceSnapshot,
   Project,
   SessionUser,
+  StaffDirectoryRecord,
   TimeEntry,
 } from "@/lib/domain/types";
 import { createExpense as createExpenseMemory } from "@/lib/services/expenses";
@@ -1055,6 +1057,129 @@ export async function listStaffMembers(
     "select staff_id, full_name from app.staff_members where deleted_at_utc is null order by full_name asc",
   );
   return rows.map((row) => ({ staffId: String(row.staff_id), fullName: String(row.full_name) }));
+}
+
+export async function listStaffDirectory(actor: SessionUser): Promise<StaffDirectoryRecord[]> {
+  if (!isPostgresConfigured()) {
+    return [
+      {
+        staffId: "staff-1",
+        fullName: "Jordan Lee",
+        externalCode: "E-1001",
+        employmentType: "full_time",
+        annualSalaryCents: 16000000,
+        hourlyRateCents: null,
+        currency: "USD",
+        updatedAtUtc: new Date().toISOString(),
+      },
+      {
+        staffId: "staff-2",
+        fullName: "Avery Stone",
+        externalCode: "E-1002",
+        employmentType: "contractor",
+        annualSalaryCents: null,
+        hourlyRateCents: 11000,
+        currency: "USD",
+        updatedAtUtc: new Date().toISOString(),
+      },
+    ];
+  }
+
+  const rows = await queryAsActor(
+    actorWithOrg(actor),
+    `select
+       s.staff_id,
+       s.full_name,
+       s.external_code,
+       c.employment_type,
+       c.annual_salary_cents,
+       c.hourly_rate_cents,
+       c.currency,
+       c.updated_at_utc
+      from app.staff_members s
+      left join app.staff_compensation c
+        on c.org_id = s.org_id and c.staff_id = s.staff_id and c.deleted_at_utc is null
+      where s.org_id = $1 and s.deleted_at_utc is null
+      order by s.full_name asc`,
+    [actor.orgId],
+  );
+
+  return rows.map((row) => ({
+    staffId: String(row.staff_id),
+    fullName: String(row.full_name),
+    externalCode: row.external_code ? String(row.external_code) : null,
+    employmentType: row.employment_type ? (String(row.employment_type) as EmploymentType) : null,
+    annualSalaryCents: row.annual_salary_cents != null ? Number(row.annual_salary_cents) : null,
+    hourlyRateCents: row.hourly_rate_cents != null ? Number(row.hourly_rate_cents) : null,
+    currency: "USD",
+    updatedAtUtc: row.updated_at_utc ? asIso(row.updated_at_utc as string) : null,
+  }));
+}
+
+export async function createStaffMember(
+  actor: SessionUser,
+  input: { staffId: string; fullName: string; externalCode?: string },
+): Promise<{ staffId: string; fullName: string; externalCode: string | null }> {
+  if (!isPostgresConfigured()) {
+    return {
+      staffId: input.staffId,
+      fullName: input.fullName,
+      externalCode: input.externalCode ?? null,
+    };
+  }
+
+  const existing = await queryAsActor(
+    actorWithOrg(actor),
+    "select staff_id from app.staff_members where org_id = $1 and staff_id = $2 and deleted_at_utc is null limit 1",
+    [actor.orgId, input.staffId],
+  );
+  if (existing.length > 0) {
+    throw conflict("Staff member already exists.");
+  }
+
+  await queryAsActor(
+    actorWithOrg(actor),
+    `insert into app.staff_members (org_id, staff_id, full_name, external_code, deleted_at_utc)
+     values ($1, $2, $3, $4, null)`,
+    [actor.orgId, input.staffId, input.fullName, input.externalCode ?? null],
+  );
+
+  return {
+    staffId: input.staffId,
+    fullName: input.fullName,
+    externalCode: input.externalCode ?? null,
+  };
+}
+
+export async function upsertStaffCompensation(
+  actor: SessionUser,
+  staffId: string,
+  input: {
+    employmentType: EmploymentType;
+    annualSalaryCents: number | null;
+    hourlyRateCents: number | null;
+    currency: "USD";
+  },
+): Promise<void> {
+  if (!isPostgresConfigured()) {
+    return;
+  }
+
+  await queryAsActor(
+    actorWithOrg(actor),
+    `insert into app.staff_compensation
+      (org_id, staff_id, employment_type, annual_salary_cents, hourly_rate_cents, currency, updated_at_utc, deleted_at_utc)
+     values ($1, $2, $3, $4, $5, $6, now(), null)
+     on conflict (org_id, staff_id)
+     do update set
+       employment_type = excluded.employment_type,
+       annual_salary_cents = excluded.annual_salary_cents,
+       hourly_rate_cents = excluded.hourly_rate_cents,
+       currency = excluded.currency,
+       updated_at_utc = now(),
+       deleted_at_utc = null`,
+    [actor.orgId, staffId, input.employmentType, input.annualSalaryCents, input.hourlyRateCents, input.currency],
+  );
 }
 
 export async function listProjectNames(actor: SessionUser): Promise<string[]> {

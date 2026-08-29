@@ -5,18 +5,34 @@ import { ModuleShell } from "@/components/module-shell";
 import { ErrorState, LoadingState } from "@/components/ui/states";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiClientError, authJson } from "@/lib/client-api";
+import { formatCurrencyCents } from "@/lib/format";
 
 interface MeResponse {
   userId: string;
   role: "owner" | "hr" | "cto";
 }
 
+interface StaffDirectoryRow {
+  staffId: string;
+  fullName: string;
+  externalCode: string | null;
+  employmentType: "full_time" | "part_time" | "contractor" | null;
+  annualSalaryCents: number | null;
+  hourlyRateCents: number | null;
+  currency: "USD";
+  updatedAtUtc: string | null;
+}
+
 export default function AdminPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [staffSubmitting, setStaffSubmitting] = useState(false);
+  const [compSubmitting, setCompSubmitting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [noticePublishing, setNoticePublishing] = useState(false);
+  const [staffRows, setStaffRows] = useState<StaffDirectoryRow[]>([]);
+  const [staffLoading, setStaffLoading] = useState(true);
   const [form, setForm] = useState({
     userId: "",
     role: "hr",
@@ -28,15 +44,45 @@ export default function AdminPage() {
     noticeText:
       "I acknowledge that all client, employee, financial, and project information in Agency OS is confidential and must only be used for authorized business purposes.",
   });
+  const [staffForm, setStaffForm] = useState({
+    staffId: "",
+    fullName: "",
+    externalCode: "",
+  });
+  const [compForm, setCompForm] = useState({
+    staffId: "",
+    employmentType: "full_time",
+    annualSalaryCents: "",
+    hourlyRateCents: "",
+  });
+
+  async function refreshStaffDirectory() {
+    setStaffLoading(true);
+    try {
+      const rows = await authJson<StaffDirectoryRow[]>("/api/staff-directory");
+      setStaffRows(rows);
+      setCompForm((current) => ({
+        ...current,
+        staffId: current.staffId || rows[0]?.staffId || "",
+      }));
+    } catch (cause) {
+      setError(cause instanceof ApiClientError ? cause.message : "Failed to load staff directory.");
+    }
+    setStaffLoading(false);
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void authJson<MeResponse>("/api/me")
         .then((data) => {
           setMe(data);
+          if (data.role === "owner" || data.role === "hr") {
+            void refreshStaffDirectory();
+          }
         })
         .catch((cause) => {
           setError(cause instanceof ApiClientError ? cause.message : "Failed to load current user.");
+          setStaffLoading(false);
         });
     }, 0);
 
@@ -89,6 +135,55 @@ export default function AdminPage() {
       setError(cause instanceof ApiClientError ? cause.message : "Failed to publish confidentiality notice.");
     }
     setNoticePublishing(false);
+  }
+
+  async function addStaffMember(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setStaffSubmitting(true);
+    setError(null);
+    setResult(null);
+    try {
+      await authJson("/api/staff-members", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(staffForm),
+      });
+      setResult(`Added staff member ${staffForm.fullName} (${staffForm.staffId}).`);
+      setStaffForm({ staffId: "", fullName: "", externalCode: "" });
+      await refreshStaffDirectory();
+    } catch (cause) {
+      setError(cause instanceof ApiClientError ? cause.message : "Failed to add staff member.");
+    }
+    setStaffSubmitting(false);
+  }
+
+  async function saveCompensation(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!compForm.staffId) {
+      setError("Choose a staff member first.");
+      return;
+    }
+
+    setCompSubmitting(true);
+    setError(null);
+    setResult(null);
+    try {
+      await authJson(`/api/staff-members/${encodeURIComponent(compForm.staffId)}/compensation`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          employmentType: compForm.employmentType,
+          annualSalaryCents: compForm.annualSalaryCents ? Number(compForm.annualSalaryCents) : null,
+          hourlyRateCents: compForm.hourlyRateCents ? Number(compForm.hourlyRateCents) : null,
+          currency: "USD",
+        }),
+      });
+      setResult(`Saved compensation for ${compForm.staffId}.`);
+      await refreshStaffDirectory();
+    } catch (cause) {
+      setError(cause instanceof ApiClientError ? cause.message : "Failed to save compensation.");
+    }
+    setCompSubmitting(false);
   }
 
   return (
@@ -197,6 +292,156 @@ export default function AdminPage() {
               </button>
             </div>
           </form>
+        </section>
+      ) : null}
+
+      {me && (me.role === "owner" || me.role === "hr") ? (
+        <section className="grid gap-3 xl:grid-cols-2">
+          <form className="card grid gap-3" onSubmit={addStaffMember}>
+            <h3 className="text-sm font-semibold text-ink">Add employee record</h3>
+            <p className="text-xs text-muted">This creates a staff member for time, expenses, payroll, and reporting.</p>
+            <label className="field">
+              <span className="field-label">Staff ID</span>
+              <input
+                className="input"
+                value={staffForm.staffId}
+                onChange={(event) => setStaffForm({ ...staffForm, staffId: event.target.value })}
+                placeholder="staff-1001"
+                required
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Full name</span>
+              <input
+                className="input"
+                value={staffForm.fullName}
+                onChange={(event) => setStaffForm({ ...staffForm, fullName: event.target.value })}
+                placeholder="Avery Stone"
+                required
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">External code (optional)</span>
+              <input
+                className="input"
+                value={staffForm.externalCode}
+                onChange={(event) => setStaffForm({ ...staffForm, externalCode: event.target.value })}
+                placeholder="EMP-1001"
+              />
+            </label>
+            <div>
+              <button type="submit" className="btn" disabled={staffSubmitting}>
+                {staffSubmitting ? "Adding..." : "Add employee"}
+              </button>
+            </div>
+          </form>
+
+          <form className="card grid gap-3" onSubmit={saveCompensation}>
+            <h3 className="text-sm font-semibold text-ink">Set salary / compensation</h3>
+            <p className="text-xs text-muted">Supports annual salary and contractor hourly rates.</p>
+            <label className="field">
+              <span className="field-label">Staff member</span>
+              <select
+                className="select"
+                value={compForm.staffId}
+                onChange={(event) => setCompForm({ ...compForm, staffId: event.target.value })}
+                required
+              >
+                <option value="">Select staff</option>
+                {staffRows.map((row) => (
+                  <option key={row.staffId} value={row.staffId}>
+                    {row.fullName} ({row.staffId})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">Employment type</span>
+              <select
+                className="select"
+                value={compForm.employmentType}
+                onChange={(event) => setCompForm({ ...compForm, employmentType: event.target.value })}
+              >
+                <option value="full_time">full_time</option>
+                <option value="part_time">part_time</option>
+                <option value="contractor">contractor</option>
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">Annual salary (cents, optional)</span>
+              <input
+                className="input num"
+                type="number"
+                min={0}
+                value={compForm.annualSalaryCents}
+                onChange={(event) => setCompForm({ ...compForm, annualSalaryCents: event.target.value })}
+                placeholder="12000000"
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Hourly rate (cents, optional)</span>
+              <input
+                className="input num"
+                type="number"
+                min={0}
+                value={compForm.hourlyRateCents}
+                onChange={(event) => setCompForm({ ...compForm, hourlyRateCents: event.target.value })}
+                placeholder="10000"
+              />
+            </label>
+            <div>
+              <button type="submit" className="btn" disabled={compSubmitting}>
+                {compSubmitting ? "Saving..." : "Save compensation"}
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : null}
+
+      {me && (me.role === "owner" || me.role === "hr") ? (
+        <section className="card">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-ink">Staff directory & compensation</h3>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                void refreshStaffDirectory();
+              }}
+            >
+              Refresh
+            </button>
+          </div>
+          {staffLoading ? <LoadingState label="Loading staff directory..." /> : null}
+          {!staffLoading ? (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Staff</th>
+                    <th>Code</th>
+                    <th>Type</th>
+                    <th>Annual</th>
+                    <th>Hourly</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {staffRows.map((row) => (
+                    <tr key={row.staffId}>
+                      <td>
+                        {row.fullName}
+                        <div className="text-xs text-muted">{row.staffId}</div>
+                      </td>
+                      <td>{row.externalCode ?? "-"}</td>
+                      <td>{row.employmentType ? <StatusBadge status={row.employmentType} /> : "-"}</td>
+                      <td className="num">{row.annualSalaryCents != null ? formatCurrencyCents(row.annualSalaryCents) : "-"}</td>
+                      <td className="num">{row.hourlyRateCents != null ? formatCurrencyCents(row.hourlyRateCents) : "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </section>
       ) : null}
     </ModuleShell>

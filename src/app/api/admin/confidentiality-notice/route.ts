@@ -6,7 +6,7 @@ import { publishConfidentialityNoticeSchema } from "@/lib/validation";
 
 export async function POST(request: Request) {
   try {
-    const actor = await getSessionUser(request);
+    const actor = await getSessionUser(request, { allowCoreAccessViolation: true });
     if (actor.role !== "owner") {
       throw forbidden("Only owner may publish confidentiality notices.");
     }

@@ -23,6 +23,14 @@ create table app.staff_members (
   org_id text not null references app.organizations(id), staff_id text not null, full_name text not null, external_code text,
   created_at_utc timestamptz not null default now(), deleted_at_utc timestamptz, primary key (org_id, staff_id)
 );
+create table app.staff_compensation (
+  org_id text not null references app.organizations(id), staff_id text not null,
+  employment_type text not null check (employment_type in ('full_time', 'part_time', 'contractor')),
+  annual_salary_cents bigint, hourly_rate_cents bigint, currency text not null default 'USD' check (currency = 'USD'),
+  updated_at_utc timestamptz not null default now(), deleted_at_utc timestamptz,
+  primary key (org_id, staff_id), foreign key (org_id, staff_id) references app.staff_members(org_id, staff_id),
+  check (annual_salary_cents is not null or hourly_rate_cents is not null)
+);
 create table app.import_batches (
   org_id text not null references app.organizations(id), id text not null, importer_user_id text not null,
   source_filename text not null, file_hash_sha256 text not null, force_reimport boolean not null default false,

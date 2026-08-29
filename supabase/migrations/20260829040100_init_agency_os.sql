@@ -52,6 +52,20 @@ create table app.staff_members (
   primary key (org_id, staff_id)
 );
 
+create table app.staff_compensation (
+  org_id text not null references app.organizations(id),
+  staff_id text not null,
+  employment_type text not null check (employment_type in ('full_time', 'part_time', 'contractor')),
+  annual_salary_cents bigint,
+  hourly_rate_cents bigint,
+  currency text not null default 'USD' check (currency = 'USD'),
+  updated_at_utc timestamptz not null default now(),
+  deleted_at_utc timestamptz,
+  primary key (org_id, staff_id),
+  foreign key (org_id, staff_id) references app.staff_members(org_id, staff_id),
+  check (annual_salary_cents is not null or hourly_rate_cents is not null)
+);
+
 create table app.import_batches (
   org_id text not null references app.organizations(id),
   id text not null,
@@ -381,6 +395,8 @@ alter table app.employees enable row level security;
 alter table app.employees force row level security;
 alter table app.staff_members enable row level security;
 alter table app.staff_members force row level security;
+alter table app.staff_compensation enable row level security;
+alter table app.staff_compensation force row level security;
 alter table app.idempotency_keys enable row level security;
 alter table app.idempotency_keys force row level security;
 alter table app.revoked_sessions enable row level security;
@@ -398,6 +414,7 @@ alter table app.sensitive_view_events force row level security;
 
 create policy org_scoped_employees on app.employees using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
 create policy org_scoped_staff on app.staff_members using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
+create policy org_scoped_staff_comp on app.staff_compensation using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
 create policy org_scoped_leads on app.leads using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
 create policy org_scoped_deals on app.deals using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());
 create policy org_scoped_projects on app.projects using (org_id = app.current_org_id()) with check (org_id = app.current_org_id());

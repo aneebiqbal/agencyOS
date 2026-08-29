@@ -11,7 +11,7 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const actor = await getSessionUser(request);
+    const actor = await getSessionUser(request, { allowCoreAccessViolation: true });
     const payload = await parseRequestBody(request, schema);
     await acknowledgeConfidentiality(actor, payload.version);
     return jsonResponse(200, { ok: true, data: { acknowledged: true } });
