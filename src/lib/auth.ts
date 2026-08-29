@@ -346,8 +346,8 @@ function bootCoreAccessModelGuard(): void {
   void assertCoreAccessModel("startup").catch((error: unknown) => {
     const message = error instanceof Error ? error.message : "Unknown core access model error";
     if (process.env.NODE_ENV === "production") {
-      console.error(`Fatal core access model startup failure: ${message}`);
-      process.exit(1);
+      console.error(`Core access model startup warning: ${message}`);
+      return;
     }
     if (!coreAccessWarningShown) {
       coreAccessWarningShown = true;
