@@ -24,6 +24,11 @@ interface StaffDirectoryRow {
   updatedAtUtc: string | null;
 }
 
+interface StaffMemberRow {
+  staffId: string;
+  fullName: string;
+}
+
 export default function EmployeesPage() {
   const [me, setMe] = useState<MePayload | null>(null);
   const [rows, setRows] = useState<StaffDirectoryRow[]>([]);
@@ -52,7 +57,27 @@ export default function EmployeesPage() {
         return;
       }
 
-      const staffRows = await authJson<StaffDirectoryRow[]>("/api/staff-directory");
+      let staffRows: StaffDirectoryRow[] = [];
+      try {
+        staffRows = await authJson<StaffDirectoryRow[]>("/api/staff-directory");
+      } catch (cause) {
+        if (!(cause instanceof ApiClientError) || cause.status !== 404) {
+          throw cause;
+        }
+
+        const basicRows = await authJson<StaffMemberRow[]>("/api/staff-members");
+        staffRows = basicRows.map((row) => ({
+          staffId: row.staffId,
+          fullName: row.fullName,
+          externalCode: null,
+          employmentType: null,
+          annualSalaryCents: null,
+          hourlyRateCents: null,
+          currency: "USD",
+          updatedAtUtc: null,
+        }));
+      }
+
       setRows(staffRows);
       setCompForm((current) => ({ ...current, staffId: current.staffId || staffRows[0]?.staffId || "" }));
       setLoading(false);

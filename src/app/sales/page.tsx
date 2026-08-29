@@ -52,6 +52,10 @@ export default function SalesPage() {
         ...current,
         ownerUserId: current.ownerUserId === "owner-1" ? meRow.userId : current.ownerUserId,
       }));
+      setWinForm((current) => ({
+        ...current,
+        managerUserId: current.managerUserId === "cto-1" ? meRow.userId : current.managerUserId,
+      }));
       setWinForm((current) => (current.dealId || dealRows.length === 0 ? current : { ...current, dealId: dealRows[0].id }));
       setLoading(false);
     } catch (cause) {
@@ -191,7 +195,7 @@ export default function SalesPage() {
           </label>
           <label className="field">
             <span className="field-label">Project manager user ID</span>
-            <input className="input" value={winForm.managerUserId} onChange={(e) => setWinForm({ ...winForm, managerUserId: e.target.value })} placeholder="cto-1" required />
+            <input className="input" value={winForm.managerUserId} onChange={(e) => setWinForm({ ...winForm, managerUserId: e.target.value })} placeholder="manager user id" required />
           </label>
           <button type="submit" disabled={pending} className="btn mt-2">
             {pending ? "Converting..." : "Mark won and create project"}

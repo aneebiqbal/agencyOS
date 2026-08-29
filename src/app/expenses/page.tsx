@@ -5,6 +5,7 @@ import { ModuleShell } from "@/components/module-shell";
 import { ErrorState, EmptyState, LoadingState } from "@/components/ui/states";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiClientError, authFetch, authJson, createIdempotencyKey } from "@/lib/client-api";
+import { getMeCached } from "@/lib/client-me";
 import { formatCurrencyCents, formatDate } from "@/lib/format";
 
 interface Expense {
@@ -42,15 +43,17 @@ export default function ExpensesPage() {
     setLoading(true);
     setError(null);
     try {
-      const [expenseRows, staffRows] = await Promise.all([
+      const [expenseRows, staffRows, me] = await Promise.all([
         authJson<Expense[]>("/api/expenses/list"),
         authJson<StaffMember[]>("/api/staff-members"),
+        getMeCached(),
       ]);
       setExpenses(expenseRows);
       setStaff(staffRows);
       setForm((current) => ({
         ...current,
         employeeUserId: current.employeeUserId || staffRows[0]?.staffId || "",
+        approverUserId: current.approverUserId === "owner-1" ? me.userId : current.approverUserId,
       }));
       setLoading(false);
     } catch (cause) {
@@ -188,7 +191,7 @@ export default function ExpensesPage() {
             <span className="field-label">Approver user ID</span>
             <input
               className="input"
-              placeholder="owner-1"
+              placeholder="approver user id"
               value={form.approverUserId}
               onChange={(event) => setForm({ ...form, approverUserId: event.target.value })}
               required

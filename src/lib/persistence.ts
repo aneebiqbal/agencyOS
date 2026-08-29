@@ -400,6 +400,14 @@ export async function markDealWonAndCreateProject(
   }
   const ctx = actorWithOrg(actor);
   return transactionAsActor(ctx, async (client) => {
+    const managerRows = await client.query(
+      "select user_id from app.employees where org_id = $1 and user_id = $2 and deleted_at_utc is null limit 1",
+      [ctx.orgId, input.managerUserId],
+    );
+    if (managerRows.rowCount === 0) {
+      throw badRequest("Project manager user id is not provisioned in core accounts.");
+    }
+
     const dealRows = await client.query(
       "select * from app.deals where org_id = $1 and id = $2 and deleted_at_utc is null for update",
       [ctx.orgId, dealId],
@@ -486,6 +494,22 @@ export async function createTimeEntry(
       return { status: idem.status, body: idem.body };
     }
 
+    const staffRows = await client.query(
+      "select staff_id from app.staff_members where org_id = $1 and staff_id = $2 and deleted_at_utc is null limit 1",
+      [ctx.orgId, input.employeeUserId],
+    );
+    if (staffRows.rowCount === 0) {
+      throw badRequest("Employee staff id was not found. Add employee in Employees page first.");
+    }
+
+    const projectRows = await client.query(
+      "select id from app.projects where org_id = $1 and id = $2 and deleted_at_utc is null limit 1",
+      [ctx.orgId, input.projectId],
+    );
+    if (projectRows.rowCount === 0) {
+      throw badRequest("Project id was not found.");
+    }
+
     const insertRows = await client.query(
       `insert into app.time_entries
         (org_id, id, employee_user_id, project_id, hours, billable, description, work_date_utc, billed_invoice_id, created_at_utc, deleted_at_utc)
@@ -531,6 +555,22 @@ export async function createExpense(
     const idem = await reserveIdempotencyKey(client, ctx, "/api/expenses", idempotencyKey);
     if (idem.replay) {
       return { status: idem.status, body: idem.body };
+    }
+
+    const staffRows = await client.query(
+      "select staff_id from app.staff_members where org_id = $1 and staff_id = $2 and deleted_at_utc is null limit 1",
+      [ctx.orgId, input.employeeUserId],
+    );
+    if (staffRows.rowCount === 0) {
+      throw badRequest("Employee staff id was not found. Add employee in Employees page first.");
+    }
+
+    const approverRows = await client.query(
+      "select user_id from app.employees where org_id = $1 and user_id = $2 and deleted_at_utc is null limit 1",
+      [ctx.orgId, input.approverUserId],
+    );
+    if (approverRows.rowCount === 0) {
+      throw badRequest("Approver user id is not provisioned in core accounts.");
     }
 
     const insertRows = await client.query(
@@ -1094,24 +1134,52 @@ export async function listStaffDirectory(actor: SessionUser): Promise<StaffDirec
     ];
   }
 
-  const rows = await queryAsActor(
-    actorWithOrg(actor),
-    `select
-       s.staff_id,
-       s.full_name,
-       s.external_code,
-       c.employment_type,
-       c.annual_salary_cents,
-       c.hourly_rate_cents,
-       c.currency,
-       c.updated_at_utc
-      from app.staff_members s
-      left join app.staff_compensation c
-        on c.org_id = s.org_id and c.staff_id = s.staff_id and c.deleted_at_utc is null
-      where s.org_id = $1 and s.deleted_at_utc is null
-      order by s.full_name asc`,
-    [actor.orgId],
-  );
+  let rows: Record<string, unknown>[];
+  try {
+    rows = await queryAsActor(
+      actorWithOrg(actor),
+      `select
+         s.staff_id,
+         s.full_name,
+         s.external_code,
+         c.employment_type,
+         c.annual_salary_cents,
+         c.hourly_rate_cents,
+         c.currency,
+         c.updated_at_utc
+        from app.staff_members s
+        left join app.staff_compensation c
+          on c.org_id = s.org_id and c.staff_id = s.staff_id and c.deleted_at_utc is null
+        where s.org_id = $1 and s.deleted_at_utc is null
+        order by s.full_name asc`,
+      [actor.orgId],
+    );
+  } catch (error) {
+    const code =
+      typeof error === "object" && error !== null && "code" in error && typeof (error as { code?: unknown }).code === "string"
+        ? (error as { code: string }).code
+        : null;
+    if (code !== "42P01") {
+      throw error;
+    }
+
+    rows = await queryAsActor(
+      actorWithOrg(actor),
+      `select
+         s.staff_id,
+         s.full_name,
+         s.external_code,
+         null::text as employment_type,
+         null::bigint as annual_salary_cents,
+         null::bigint as hourly_rate_cents,
+         'USD'::text as currency,
+         null::timestamptz as updated_at_utc
+        from app.staff_members s
+        where s.org_id = $1 and s.deleted_at_utc is null
+        order by s.full_name asc`,
+      [actor.orgId],
+    );
+  }
 
   return rows.map((row) => ({
     staffId: String(row.staff_id),
