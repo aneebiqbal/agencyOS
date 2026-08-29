@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { ModuleShell } from "@/components/module-shell";
-import { ErrorState } from "@/components/ui/states";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { ApiClientError, authJson } from "@/lib/client-api";
+
+const CANONICAL_MAPPING_KEYS = ["employee_name", "employee_id", "project", "date", "hours", "amount", "description", "category"] as const;
 
 interface ImportFlag {
   code: string;
@@ -32,6 +34,7 @@ interface ImportPreview {
   previewId: string;
   sourceFilename: string;
   detectedEncoding: string;
+  mapping: Record<string, string | null>;
   unmappedColumns: string[];
   cleanRows: ParsedImportRow[];
   flaggedRows: ParsedImportRow[];
@@ -56,6 +59,7 @@ export default function ImportsPage() {
   const [rowProjectDecisions, setRowProjectDecisions] = useState<
     Record<string, { action: "use_existing" | "create_project" | "skip"; projectName?: string }>
   >({});
+  const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -101,12 +105,28 @@ export default function ImportsPage() {
         body: JSON.stringify({
           sourceFilename: file.name,
           csvBase64,
+          mappingOverrides: Object.keys(mappingOverrides).length > 0 ? mappingOverrides : undefined,
         }),
       });
 
       setPreview(data);
       setRowEmployeeLinks({});
-      setRowProjectDecisions({});
+      setMappingOverrides(
+        Object.fromEntries(
+          Object.entries(data.mapping).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+        ),
+      );
+      setRowProjectDecisions(
+        Object.fromEntries(
+          data.flaggedRows.map((row) => [
+            String(row.rowNumber),
+            {
+              action: "skip" as const,
+              projectName: row.normalized.projectName ?? "",
+            },
+          ]),
+        ),
+      );
       setLoading(false);
     } catch (cause) {
       setError(cause instanceof ApiClientError ? cause.message : "Preview failed.");
@@ -149,13 +169,31 @@ export default function ImportsPage() {
     }
   }
 
+  const requiresHumanCount = preview
+    ? preview.flaggedRows.reduce((count, row) => count + row.flags.filter((flag) => flag.requiresHuman).length, 0)
+    : 0;
+  const headerOptions = preview
+    ? Array.from(
+        new Set([
+          ...preview.unmappedColumns,
+          ...Object.values(preview.mapping).filter((header): header is string => Boolean(header)),
+        ]),
+      )
+    : [];
+
   return (
     <ModuleShell title="CSV Import Pipeline" description="Upload CSV, preview parsing/flags, resolve flagged rows, then confirm commit.">
       {error ? <ErrorState message={error} /> : null}
 
       <section className="card">
-        <h3 className="text-sm font-semibold text-ink">Step 1: Upload + Preview</h3>
-        <form onSubmit={runPreview} className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Step 1. Upload and validate file</h3>
+            <p className="mt-1 text-sm text-muted">Upload one CSV file to generate a structured preview before any records are committed.</p>
+          </div>
+          <span className="status-badge status-info">Safe preview mode</span>
+        </div>
+        <form id="import-preview-form" onSubmit={runPreview} className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
           <input type="file" name="csvFile" accept=".csv,text/csv" className="input text-sm" required />
           <button
             type="submit"
@@ -165,30 +203,106 @@ export default function ImportsPage() {
             {loading ? "Generating preview..." : "Generate preview"}
           </button>
         </form>
+        {staff.length > 0 ? (
+          <p className="mt-3 text-xs text-muted">Known staff for resolution: {staff.map((person) => `${person.fullName} (${person.staffId})`).join(", ")}</p>
+        ) : (
+          <p className="mt-3 text-xs text-muted">Staff records are unavailable right now; manual staff IDs still work in resolution fields.</p>
+        )}
       </section>
 
       {preview ? (
         <>
-          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <section className="kpi-grid">
             {[
-              ["Total", preview.totals.total],
-              ["Clean", preview.totals.clean],
-              ["Flagged", preview.totals.flagged],
-              ["Skipped", preview.totals.skipped],
-            ].map(([label, value]) => (
-               <div key={label} className="card">
-                 <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
-                 <p className="num mt-2 text-2xl font-semibold text-ink">{value}</p>
-               </div>
-             ))}
-           </section>
+              { label: "Total rows", value: preview.totals.total },
+              { label: "Clean rows", value: preview.totals.clean },
+              { label: "Flagged rows", value: preview.totals.flagged },
+              { label: "Skipped rows", value: preview.totals.skipped },
+            ].map((item) => (
+              <div key={item.label} className="card">
+                <p className="text-xs uppercase tracking-wide text-muted">{item.label}</p>
+                <p className="num mt-2 text-2xl font-semibold text-ink">{item.value}</p>
+              </div>
+            ))}
+          </section>
 
           <section className="card">
-            <h3 className="text-sm font-semibold text-ink">Step 2: Resolve flagged rows + confirm</h3>
+            <h3 className="text-sm font-semibold text-ink">Preview metadata</h3>
+            <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
+              <div className="card-muted">
+                <p className="field-label">Source file</p>
+                <p className="mt-1 font-medium text-ink">{preview.sourceFilename}</p>
+              </div>
+              <div className="card-muted">
+                <p className="field-label">Detected encoding</p>
+                <p className="mt-1 font-medium text-ink">{preview.detectedEncoding}</p>
+              </div>
+              <div className="card-muted">
+                <p className="field-label">Preview batch ID</p>
+                <p className="mt-1 font-mono text-xs text-ink">{preview.previewId}</p>
+              </div>
+              <div className="card-muted">
+                <p className="field-label">Human-review flags</p>
+                <p className="mt-1 num font-medium text-ink">{requiresHumanCount}</p>
+              </div>
+            </div>
+          </section>
+
+          <section className="card">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-ink">Step 2. Resolve flagged rows and decisions</h3>
+                <p className="mt-1 text-sm text-muted">Resolve staff/project decisions for flagged rows, then proceed to commit.</p>
+              </div>
+              <span className="status-badge status-warn">Resolution required</span>
+            </div>
+
             {preview.unmappedColumns.length > 0 ? (
-              <p className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800">
-                Unmapped columns: {preview.unmappedColumns.join(", ")}. Confirm is blocked until CSV mapping is corrected.
-              </p>
+              <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                <p>
+                  Unmapped columns: {preview.unmappedColumns.join(", ")}. Confirm is blocked until mapping is resolved.
+                </p>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {CANONICAL_MAPPING_KEYS.map((key) => (
+                    <label key={key} className="field">
+                      <span className="field-label">Map {key.replace(/_/g, " ")}</span>
+                      <select
+                        className="select"
+                        value={mappingOverrides[key] ?? ""}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setMappingOverrides((current) => {
+                            if (!value) {
+                              const next = { ...current };
+                              delete next[key];
+                              return next;
+                            }
+                            return { ...current, [key]: value };
+                          });
+                        }}
+                      >
+                        <option value="">Auto detect</option>
+                        {headerOptions.map((header) => (
+                          <option key={`${key}:${header}`} value={header}>
+                            {header}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="btn mt-3"
+                  onClick={() => {
+                    const form = document.getElementById("import-preview-form") as HTMLFormElement | null;
+                    form?.requestSubmit();
+                  }}
+                  disabled={loading}
+                >
+                  {loading ? "Regenerating..." : "Re-run preview with mapping"}
+                </button>
+              </div>
             ) : null}
 
             {preview.flaggedRows.length === 0 ? (
@@ -206,17 +320,37 @@ export default function ImportsPage() {
                       ))}
                     </ul>
                     <div className="mt-2 grid gap-2 md:grid-cols-3">
-                      <input
-                        className="input"
-                        placeholder="Resolved staff id"
-                        value={rowEmployeeLinks[String(row.rowNumber)] ?? ""}
-                        onChange={(event) =>
-                          setRowEmployeeLinks((current) => ({
-                            ...current,
-                            [String(row.rowNumber)]: event.target.value,
-                          }))
-                        }
-                      />
+                      {staff.length > 0 ? (
+                        <select
+                          className="select"
+                          value={rowEmployeeLinks[String(row.rowNumber)] ?? ""}
+                          onChange={(event) =>
+                            setRowEmployeeLinks((current) => ({
+                              ...current,
+                              [String(row.rowNumber)]: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">Select staff</option>
+                          {staff.map((person) => (
+                            <option key={person.staffId} value={person.staffId}>
+                              {person.fullName} ({person.staffId})
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          className="input"
+                          placeholder="Resolved staff ID"
+                          value={rowEmployeeLinks[String(row.rowNumber)] ?? ""}
+                          onChange={(event) =>
+                            setRowEmployeeLinks((current) => ({
+                              ...current,
+                              [String(row.rowNumber)]: event.target.value,
+                            }))
+                          }
+                        />
+                      )}
                       <select
                         className="select"
                         value={rowProjectDecisions[String(row.rowNumber)]?.action ?? "skip"}
@@ -236,7 +370,7 @@ export default function ImportsPage() {
                       </select>
                       <input
                         className="input"
-                        placeholder="Project name (optional)"
+                        placeholder="Project name (only if needed)"
                         value={rowProjectDecisions[String(row.rowNumber)]?.projectName ?? ""}
                         onChange={(event) =>
                           setRowProjectDecisions((current) => ({
@@ -267,31 +401,41 @@ export default function ImportsPage() {
               <label htmlFor="forceReimport">Force re-import if file hash already exists</label>
             </div>
 
-            <button
-              type="button"
-              disabled={confirming || preview.unmappedColumns.length > 0}
-              onClick={() => {
-                void confirmImport();
-              }}
-              className="btn mt-4"
-            >
-              {confirming ? "Confirming..." : "Confirm import"}
-            </button>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                disabled={confirming || preview.unmappedColumns.length > 0}
+                onClick={() => {
+                  void confirmImport();
+                }}
+                className="btn"
+              >
+                {confirming ? "Committing batch..." : "Step 3. Confirm and commit import"}
+              </button>
+              {preview.unmappedColumns.length > 0 ? (
+                <span className="text-sm text-muted">Resolve column mapping issues to enable commit.</span>
+              ) : null}
+            </div>
 
             {result ? (
               <p className="mt-3 rounded border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
                 Import committed. Batch `{result.batchId}` - imported {result.importedRows}, skipped {result.skippedRows}.
               </p>
             ) : null}
-
-            {staff.length > 0 ? (
-              <p className="mt-3 text-xs text-muted">
-                Known staff ids: {staff.map((person) => person.staffId).join(", ")}
-              </p>
-            ) : null}
           </section>
         </>
-      ) : null}
+      ) : (
+        <section className="card">
+          {loading ? (
+            <LoadingState label="Generating preview and parsing records..." />
+          ) : (
+            <EmptyState
+              title="No preview generated yet"
+              guidance="Upload a CSV file above to inspect clean, flagged, and skipped rows before committing."
+            />
+          )}
+        </section>
+      )}
     </ModuleShell>
   );
 }

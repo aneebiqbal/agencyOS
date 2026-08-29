@@ -1,6 +1,9 @@
 export type UserRole = "owner" | "hr" | "cto";
 
 export type LeadSource =
+  | "linkedin"
+  | "upwork"
+  | "gmail"
   | "referral"
   | "inbound-web"
   | "outbound"
@@ -13,7 +16,14 @@ export type DealPricingModel = "hourly" | "fixed" | "retainer";
 
 export type ProjectStatus = "draft" | "active" | "completed" | "archived";
 
-export type ExpenseCategory = "rent" | "software" | "travel" | "other";
+export type ExpenseCategory =
+  | "rent"
+  | "software"
+  | "travel"
+  | "upwork"
+  | "ai_tools"
+  | "subscriptions"
+  | "other";
 
 export type ExpenseStatus = "submitted" | "approved" | "reimbursed";
 
@@ -156,7 +166,7 @@ export interface StaffDirectoryRecord {
   employmentType: EmploymentType | null;
   annualSalaryCents: number | null;
   hourlyRateCents: number | null;
-  currency: "USD";
+  currency: "USD" | "PKR";
   updatedAtUtc: string | null;
 }
 

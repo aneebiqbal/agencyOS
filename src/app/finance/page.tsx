@@ -70,11 +70,28 @@ export default function FinancePage() {
     };
   }, [refresh]);
 
+  const kpis = summary
+    ? [
+        { label: "Revenue in", value: summary.revenueInCents, tone: "status-success" },
+        { label: "Payroll out", value: summary.payrollOutCents, tone: "status-warn" },
+        { label: "Expense out", value: summary.expenseOutCents, tone: "status-info" },
+        { label: "Net margin", value: summary.netMarginCents, tone: summary.netMarginCents >= 0 ? "status-success" : "status-danger" },
+      ]
+    : [];
+  const marginRate = summary && summary.revenueInCents > 0 ? (summary.netMarginCents / summary.revenueInCents) * 100 : null;
+
   return (
     <ModuleShell title="Finance" description="Revenue, payroll outflow, expense outflow, and net margin with recent immutable audit context.">
       {error ? <ErrorState message={error} /> : null}
 
       <section className="card">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Reporting window</h3>
+            <p className="mt-1 text-sm text-muted">Pick a period, refresh metrics, then review margin and audit events together.</p>
+          </div>
+          <span className="status-badge status-info">Monthly control</span>
+        </div>
         <div className="flex flex-wrap items-end gap-3">
           <label className="field text-sm">
             <span className="field-label">From</span>
@@ -108,25 +125,54 @@ export default function FinancePage() {
 
       {loading ? <LoadingState label="Loading finance metrics..." /> : null}
       {summary ? (
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            ["Revenue In", summary.revenueInCents],
-            ["Payroll Out", summary.payrollOutCents],
-            ["Expense Out", summary.expenseOutCents],
-            ["Net Margin", summary.netMarginCents],
-          ].map(([label, value]) => (
-            <div key={label} className="card">
-              <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
-              <p className="num mt-2 text-2xl font-semibold text-ink">{formatCurrencyCents(Number(value))}</p>
+        <section className="kpi-grid">
+          {kpis.map((kpi) => (
+            <div key={kpi.label} className="card">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs uppercase tracking-wide text-muted">{kpi.label}</p>
+                <span className={`status-badge ${kpi.tone}`}>{kpi.label}</span>
+              </div>
+              <p className="num mt-2 text-2xl font-semibold text-ink">{formatCurrencyCents(kpi.value)}</p>
             </div>
           ))}
         </section>
       ) : null}
 
+      {!loading && !summary ? (
+        <EmptyState
+          title="No finance summary returned"
+          guidance="Adjust the reporting window and refresh to fetch finance metrics for the selected period."
+        />
+      ) : null}
+
+      {summary ? (
+        <section className="card">
+          <h3 className="text-sm font-semibold text-ink">Margin interpretation</h3>
+          <p className="mt-1 text-sm text-muted">
+            Period: {formatDateTime(summary.periodStartUtc)} to {formatDateTime(summary.periodEndUtc)}.
+          </p>
+          <p className="mt-2 text-sm text-muted">
+            {marginRate === null
+              ? "Margin rate is unavailable because revenue is zero for this period."
+              : `Net margin rate: ${marginRate.toFixed(1)}%. Use this with payroll and expense outflow to diagnose profitability pressure.`}
+          </p>
+        </section>
+      ) : null}
+
       <section className="card">
-        <h3 className="text-sm font-semibold text-ink">Recent audit events</h3>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Recent audit events</h3>
+            <p className="mt-1 text-sm text-muted">Review immutable changes that can explain unusual shifts in metrics.</p>
+          </div>
+          <span className="status-badge status-muted">Last 8 records</span>
+        </div>
+
+        {loading ? <LoadingState label="Loading audit trail..." /> : null}
         {!loading && auditLogs.length === 0 ? (
-          <EmptyState title="No audit entries found" guidance="Operational mutations create immutable audit log records." />
+          <div className="mt-3">
+            <EmptyState title="No audit entries found" guidance="Operational mutations create immutable audit log records." />
+          </div>
         ) : null}
         {auditLogs.length > 0 ? (
           <div className="table-wrap mt-3">

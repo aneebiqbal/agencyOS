@@ -107,13 +107,76 @@ export default function InvoicingPage() {
     }
   }
 
+  async function markPaid(invoiceId: string) {
+    const shouldContinue = window.confirm("Mark this sent invoice as paid?");
+    if (!shouldContinue) {
+      return;
+    }
+
+    setError(null);
+    try {
+      await authJson(`/api/invoices/${invoiceId}/status`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "paid" }),
+      });
+      await refreshData();
+    } catch (cause) {
+      setError(cause instanceof ApiClientError ? cause.message : "Status update failed.");
+    }
+  }
+
+  const failedCount = invoices.filter((invoice) => invoice.status === "send_failed").length;
+  const sentCount = invoices.filter((invoice) => invoice.status === "sent").length;
+  const paidCount = invoices.filter((invoice) => invoice.status === "paid").length;
+  const attemptedCount = invoices.filter((invoice) => invoice.sendAttempts > 0).length;
+  const totalValueCents = invoices.reduce((total, invoice) => total + invoice.totalCents, 0);
+
   return (
     <ModuleShell title="Invoicing" description="Generate invoices and recover failed sends safely.">
       {error ? <ErrorState message={error} /> : null}
       {loading ? <LoadingState label="Loading invoice register..." /> : null}
 
+      {!loading ? (
+        <section className="kpi-grid">
+          <div className="card">
+            <p className="text-xs uppercase tracking-wide text-muted">Invoices sent</p>
+            <p className="num mt-2 text-2xl font-semibold text-ink">{sentCount}</p>
+          </div>
+          <div className="card">
+            <p className="text-xs uppercase tracking-wide text-muted">Send failures</p>
+            <p className="num mt-2 text-2xl font-semibold text-ink">{failedCount}</p>
+          </div>
+          <div className="card">
+            <p className="text-xs uppercase tracking-wide text-muted">Delivery attempts</p>
+            <p className="num mt-2 text-2xl font-semibold text-ink">{attemptedCount}</p>
+          </div>
+          <div className="card">
+            <p className="text-xs uppercase tracking-wide text-muted">Paid invoices</p>
+            <p className="num mt-2 text-2xl font-semibold text-ink">{paidCount}</p>
+          </div>
+          <div className="card sm:col-span-2 xl:col-span-4">
+            <p className="text-xs uppercase tracking-wide text-muted">Invoice value</p>
+            <p className="num mt-2 text-2xl font-semibold text-ink">{formatCurrencyCents(totalValueCents)}</p>
+          </div>
+        </section>
+      ) : null}
+
       <section className="card">
-        <h3 className="text-sm font-semibold text-ink">Generate invoice</h3>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">1. Generate billable invoice</h3>
+            <p className="mt-1 text-sm text-muted">Create invoices from unbilled project time and set due date/tax rules before sending.</p>
+          </div>
+          <span className="status-badge status-info">Creation workflow</span>
+        </div>
+
+        {!loading && projects.length === 0 ? (
+          <div className="mt-3">
+            <EmptyState title="No projects available" guidance="Create a project first so billable time can be invoiced." />
+          </div>
+        ) : null}
+
         <form onSubmit={generateInvoice} className="mt-3 grid gap-3 md:grid-cols-3">
           <label className="field">
             <span className="field-label">Project</span>
@@ -156,19 +219,29 @@ export default function InvoicingPage() {
           <div className="md:col-span-3">
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || projects.length === 0}
               className="btn"
             >
-              {submitting ? "Generating..." : "Generate invoice"}
+              {submitting ? "Generating invoice..." : "Generate draft invoice"}
             </button>
           </div>
         </form>
       </section>
 
       <section className="card">
-        <h3 className="text-sm font-semibold text-ink">Invoices</h3>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">2. Review invoice register</h3>
+            <p className="mt-1 text-sm text-muted">Monitor status, due dates, send attempts, and retry failures when needed.</p>
+          </div>
+          <span className="status-badge status-warn">Delivery tracking</span>
+        </div>
+
+        {loading ? <LoadingState label="Loading invoices..." /> : null}
         {!loading && invoices.length === 0 ? (
-          <EmptyState title="No invoices yet" guidance="Generate an invoice from project time entries above." />
+          <div className="mt-3">
+            <EmptyState title="No invoices yet" guidance="Generate an invoice from project time entries above." />
+          </div>
         ) : null}
         {!loading && invoices.length > 0 ? (
           <div className="table-wrap mt-3">
@@ -181,6 +254,7 @@ export default function InvoicingPage() {
                   <th className="pb-2">Status</th>
                   <th className="pb-2">Due</th>
                   <th className="pb-2">Attempts</th>
+                  <th className="pb-2">Last error</th>
                   <th className="pb-2">Action</th>
                 </tr>
               </thead>
@@ -193,6 +267,7 @@ export default function InvoicingPage() {
                     <td className="py-2"><StatusBadge status={invoice.status} /></td>
                     <td className="py-2">{formatDate(invoice.dueDateUtc)}</td>
                     <td className="num py-2">{invoice.sendAttempts}</td>
+                    <td className="py-2 text-sm text-muted">{invoice.lastSendError ?? "-"}</td>
                     <td className="py-2">
                       {invoice.status === "send_failed" ? (
                         <button
@@ -202,7 +277,17 @@ export default function InvoicingPage() {
                           }}
                           className="btn-secondary px-2 py-1 text-xs"
                         >
-                          Retry send
+                          Retry delivery
+                        </button>
+                      ) : invoice.status === "sent" ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void markPaid(invoice.id);
+                          }}
+                          className="btn-secondary px-2 py-1 text-xs"
+                        >
+                          Mark paid
                         </button>
                       ) : (
                         <span className="text-muted">-</span>

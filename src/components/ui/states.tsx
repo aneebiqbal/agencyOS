@@ -2,17 +2,25 @@ import type { ReactNode } from "react";
 
 export function LoadingState({ label }: { label: string }) {
   return (
-    <div className="card-muted text-sm text-muted">
-      <p>{label}</p>
+    <div className="state-panel" role="status" aria-live="polite" aria-busy="true">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-medium text-ink">{label}</p>
+        <span className="state-accent">Loading</span>
+      </div>
+      <div className="mt-3 grid gap-2">
+        <div className="loading-line w-full" />
+        <div className="loading-line w-4/5" />
+      </div>
     </div>
   );
 }
 
 export function EmptyState({ title, guidance }: { title: string; guidance: string }) {
   return (
-    <div className="card-muted text-sm text-muted">
-      <p className="font-medium text-ink">{title}</p>
-      <p className="mt-1">{guidance}</p>
+    <div className="state-panel" role="status" aria-live="polite">
+      <span className="state-accent">Empty</span>
+      <p className="mt-2 text-base font-semibold text-ink">{title}</p>
+      <p className="mt-1 text-sm leading-6 text-muted">{guidance}</p>
     </div>
   );
 }
@@ -31,13 +39,15 @@ export function ErrorState({ message, action }: { message: string; action?: Reac
 
   return (
     <div
-      className={`rounded-lg p-3 text-sm ${
+      className={`rounded-xl border p-4 text-sm ${
         isConfidentialityBlock
-          ? "border border-amber-300 bg-amber-50 text-amber-900"
-          : "border border-danger/30 bg-danger/5 text-danger"
+          ? "border-amber-300 bg-amber-50/90 text-amber-950"
+          : "border-danger/30 bg-danger/10 text-danger"
       }`}
+      role="alert"
+      aria-live="assertive"
     >
-      <p>
+      <p className="font-medium leading-6">
         {isConfidentialityBlock
           ? isNotConfigured
             ? "Access is blocked because confidentiality notice is not configured. Ask owner to publish one, then reload."
@@ -45,12 +55,12 @@ export function ErrorState({ message, action }: { message: string; action?: Reac
           : message}
       </p>
       {isConfidentialityBlock ? (
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           {!isNotConfigured ? (
             <button
               type="button"
               onClick={openConfidentialityDialog}
-              className="rounded-md border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold"
+              className="btn-secondary border-amber-300 bg-white px-3 py-1.5 text-xs"
             >
               Open confidentiality popup
             </button>
@@ -58,14 +68,14 @@ export function ErrorState({ message, action }: { message: string; action?: Reac
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="rounded-md border border-amber-400 bg-amber-100 px-3 py-1.5 text-xs font-semibold"
+            className="btn border-amber-400 bg-amber-600 px-3 py-1.5 text-xs text-white hover:brightness-100"
           >
             Reload page
           </button>
           {isNotConfigured ? (
             <a
               href="/admin"
-              className="rounded-md border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold"
+              className="btn-secondary border-amber-300 bg-white px-3 py-1.5 text-xs"
             >
               Open admin
             </a>

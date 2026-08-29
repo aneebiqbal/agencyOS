@@ -1,12 +1,12 @@
 create schema if not exists app;
 
 create type app.user_role as enum ('owner', 'hr', 'cto');
-create type app.lead_source as enum ('referral', 'inbound-web', 'outbound', 'marketplace', 'other');
+create type app.lead_source as enum ('linkedin', 'upwork', 'gmail', 'referral', 'inbound-web', 'outbound', 'marketplace', 'other');
 create type app.lead_stage as enum ('new', 'qualified', 'proposal', 'won', 'lost');
 create type app.deal_pricing_model as enum ('hourly', 'fixed', 'retainer');
 create type app.deal_stage as enum ('open', 'won', 'lost');
 create type app.project_status as enum ('draft', 'active', 'completed', 'archived');
-create type app.expense_category as enum ('rent', 'software', 'travel', 'other');
+create type app.expense_category as enum ('rent', 'software', 'travel', 'upwork', 'ai_tools', 'subscriptions', 'other');
 create type app.expense_status as enum ('submitted', 'approved', 'reimbursed');
 create type app.invoice_status as enum ('draft', 'ready_for_review', 'approved', 'sent', 'paid', 'send_failed');
 create type app.import_row_status as enum ('clean', 'flagged', 'skipped', 'imported', 'voided');
@@ -58,7 +58,7 @@ create table app.staff_compensation (
   employment_type text not null check (employment_type in ('full_time', 'part_time', 'contractor')),
   annual_salary_cents bigint,
   hourly_rate_cents bigint,
-  currency text not null default 'USD' check (currency = 'USD'),
+  currency text not null default 'PKR' check (currency in ('USD', 'PKR')),
   updated_at_utc timestamptz not null default now(),
   deleted_at_utc timestamptz,
   primary key (org_id, staff_id),

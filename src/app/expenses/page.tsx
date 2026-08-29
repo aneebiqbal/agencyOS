@@ -6,12 +6,14 @@ import { ErrorState, EmptyState, LoadingState } from "@/components/ui/states";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiClientError, authFetch, authJson, createIdempotencyKey } from "@/lib/client-api";
 import { getMeCached } from "@/lib/client-me";
-import { formatCurrencyCents, formatDate } from "@/lib/format";
+import { formatCurrencyCents, formatDate, formatStatusLabel } from "@/lib/format";
+
+const EXPENSE_CATEGORY_OPTIONS = ["rent", "software", "travel", "upwork", "ai_tools", "subscriptions", "other"] as const;
 
 interface Expense {
   id: string;
   employeeUserId: string;
-  category: "rent" | "software" | "travel" | "other";
+  category: (typeof EXPENSE_CATEGORY_OPTIONS)[number];
   amountCents: number;
   approverUserId: string;
   receiptUrl: string;
@@ -24,9 +26,16 @@ interface StaffMember {
   fullName: string;
 }
 
+interface CoreUser {
+  userId: string;
+  role: "owner" | "hr" | "cto";
+  fullName: string;
+}
+
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [coreUsers, setCoreUsers] = useState<CoreUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,17 +52,23 @@ export default function ExpensesPage() {
     setLoading(true);
     setError(null);
     try {
-      const [expenseRows, staffRows, me] = await Promise.all([
+      const [expenseRows, staffRows, coreUsersRows, me] = await Promise.all([
         authJson<Expense[]>("/api/expenses/list"),
         authJson<StaffMember[]>("/api/staff-members"),
+        authJson<CoreUser[]>("/api/core-users"),
         getMeCached(),
       ]);
       setExpenses(expenseRows);
       setStaff(staffRows);
+      setCoreUsers(coreUsersRows);
+      const defaultApproverUserId = coreUsersRows.find((user) => user.role === "owner")?.userId ?? me.userId;
       setForm((current) => ({
         ...current,
         employeeUserId: current.employeeUserId || staffRows[0]?.staffId || "",
-        approverUserId: current.approverUserId === "owner-1" ? me.userId : current.approverUserId,
+        approverUserId:
+          current.approverUserId === "owner-1"
+            ? defaultApproverUserId
+            : current.approverUserId || defaultApproverUserId,
       }));
       setLoading(false);
     } catch (cause) {
@@ -127,13 +142,59 @@ export default function ExpensesPage() {
     }
   }
 
+  const submittedCount = expenses.filter((expense) => expense.status === "submitted").length;
+  const approvedCount = expenses.filter((expense) => expense.status === "approved").length;
+  const reimbursedCount = expenses.filter((expense) => expense.status === "reimbursed").length;
+  const queueValueCents = expenses
+    .filter((expense) => expense.status !== "reimbursed")
+    .reduce((total, expense) => total + expense.amountCents, 0);
+  const staffById = new Map(staff.map((person) => [person.staffId, person.fullName]));
+  const userById = new Map(coreUsers.map((user) => [user.userId, user]));
+
   return (
     <ModuleShell title="Expenses" description="Submit expenses and process approval queue from one screen.">
       {error ? <ErrorState message={error} /> : null}
-      {loading ? <LoadingState label="Loading expense queue..." /> : null}
+      {loading ? <LoadingState label="Loading expense queue and approver context..." /> : null}
+
+      {!loading ? (
+        <section className="kpi-grid">
+          <div className="card">
+            <p className="text-xs uppercase tracking-wide text-muted">Pending review</p>
+            <p className="num mt-2 text-2xl font-semibold text-ink">{submittedCount}</p>
+          </div>
+          <div className="card">
+            <p className="text-xs uppercase tracking-wide text-muted">Approved</p>
+            <p className="num mt-2 text-2xl font-semibold text-ink">{approvedCount}</p>
+          </div>
+          <div className="card">
+            <p className="text-xs uppercase tracking-wide text-muted">Reimbursed</p>
+            <p className="num mt-2 text-2xl font-semibold text-ink">{reimbursedCount}</p>
+          </div>
+          <div className="card">
+            <p className="text-xs uppercase tracking-wide text-muted">Open reimbursement value</p>
+            <p className="num mt-2 text-2xl font-semibold text-ink">{formatCurrencyCents(queueValueCents)}</p>
+          </div>
+        </section>
+      ) : null}
 
       <section className="card">
-        <h3 className="text-sm font-semibold text-ink">Submit expense</h3>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">1. Capture expense</h3>
+            <p className="mt-1 text-sm text-muted">Create a complete claim with staff, amount, approver, and receipt proof.</p>
+          </div>
+          <span className="status-badge status-info">Draft intake</span>
+        </div>
+
+        {!loading && staff.length === 0 ? (
+          <div className="mt-3">
+            <EmptyState
+              title="No staff records available"
+              guidance="Add staff profiles first so expenses can be assigned correctly."
+            />
+          </div>
+        ) : null}
+
         <form onSubmit={submitExpense} className="mt-3 grid gap-3 md:grid-cols-2">
           <label className="field">
             <span className="field-label">Employee</span>
@@ -158,9 +219,9 @@ export default function ExpensesPage() {
               value={form.category}
               onChange={(event) => setForm({ ...form, category: event.target.value as Expense["category"] })}
             >
-              {"rent,software,travel,other".split(",").map((category) => (
+              {EXPENSE_CATEGORY_OPTIONS.map((category) => (
                 <option key={category} value={category}>
-                  {category}
+                  {formatStatusLabel(category)}
                 </option>
               ))}
             </select>
@@ -188,14 +249,20 @@ export default function ExpensesPage() {
             />
           </label>
           <label className="field">
-            <span className="field-label">Approver user ID</span>
-            <input
-              className="input"
-              placeholder="approver user id"
+            <span className="field-label">Approver</span>
+            <select
+              className="select"
               value={form.approverUserId}
               onChange={(event) => setForm({ ...form, approverUserId: event.target.value })}
               required
-            />
+            >
+              <option value="">Select approver</option>
+              {coreUsers.map((user) => (
+                <option key={user.userId} value={user.userId}>
+                  {user.fullName} - {user.role} ({user.userId})
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
             <span className="field-label">Receipt URL</span>
@@ -210,19 +277,29 @@ export default function ExpensesPage() {
           <div className="md:col-span-2">
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || staff.length === 0 || coreUsers.length === 0}
               className="btn"
             >
-              {submitting ? "Submitting..." : "Submit expense"}
+              {submitting ? "Submitting claim..." : "Submit expense claim"}
             </button>
           </div>
         </form>
       </section>
 
       <section className="card">
-        <h3 className="text-sm font-semibold text-ink">Approval queue</h3>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">2. Review and settle queue</h3>
+            <p className="mt-1 text-sm text-muted">Approve eligible claims, then mark them reimbursed once payment clears.</p>
+          </div>
+          <span className="status-badge status-warn">Action required</span>
+        </div>
+
+        {loading ? <LoadingState label="Loading queue rows..." /> : null}
         {!loading && expenses.length === 0 ? (
-          <EmptyState title="No expenses yet" guidance="Submitted expenses appear here for approval and reimbursement." />
+          <div className="mt-3">
+            <EmptyState title="No expenses yet" guidance="Submitted expenses appear here for approval and reimbursement." />
+          </div>
         ) : null}
         {!loading && expenses.length > 0 ? (
           <div className="table-wrap mt-3">
@@ -232,8 +309,10 @@ export default function ExpensesPage() {
                   <th className="pb-2">Date</th>
                   <th className="pb-2">Staff</th>
                   <th className="pb-2">Category</th>
+                  <th className="pb-2">Approver</th>
                   <th className="pb-2">Amount</th>
                   <th className="pb-2">Status</th>
+                  <th className="pb-2">Receipt</th>
                   <th className="pb-2">Actions</th>
                 </tr>
               </thead>
@@ -241,10 +320,22 @@ export default function ExpensesPage() {
                 {expenses.map((expense) => (
                   <tr key={expense.id}>
                     <td className="py-2">{formatDate(expense.incurredAtUtc)}</td>
-                    <td className="py-2">{expense.employeeUserId}</td>
-                    <td className="py-2">{expense.category}</td>
+                    <td className="py-2">
+                      <p>{staffById.get(expense.employeeUserId) ?? "Unknown staff"}</p>
+                      <p className="font-mono text-xs text-muted">{expense.employeeUserId}</p>
+                    </td>
+                    <td className="py-2">{formatStatusLabel(expense.category)}</td>
+                    <td className="py-2">
+                      <p>{userById.get(expense.approverUserId)?.fullName ?? "Unknown approver"}</p>
+                      <p className="font-mono text-xs text-muted">{expense.approverUserId}</p>
+                    </td>
                     <td className="num py-2">{formatCurrencyCents(expense.amountCents)}</td>
                     <td className="py-2"><StatusBadge status={expense.status} /></td>
+                    <td className="py-2">
+                      <a href={expense.receiptUrl} target="_blank" rel="noreferrer" className="text-accent hover:text-accent-strong">
+                        Open receipt
+                      </a>
+                    </td>
                     <td className="py-2">
                       <div className="flex gap-2">
                         <button
@@ -253,8 +344,9 @@ export default function ExpensesPage() {
                             void setStatus(expense.id, "approved");
                           }}
                           className="btn-secondary px-2 py-1 text-xs"
+                          disabled={expense.status !== "submitted"}
                         >
-                          Approve
+                          Approve claim
                         </button>
                         <button
                           type="button"
@@ -262,8 +354,9 @@ export default function ExpensesPage() {
                             void setStatus(expense.id, "reimbursed");
                           }}
                           className="btn-secondary px-2 py-1 text-xs"
+                          disabled={expense.status !== "approved"}
                         >
-                          Mark reimbursed
+                          Mark paid
                         </button>
                       </div>
                     </td>

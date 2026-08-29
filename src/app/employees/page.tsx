@@ -6,7 +6,7 @@ import { ErrorState, LoadingState } from "@/components/ui/states";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ApiClientError, authJson } from "@/lib/client-api";
 import { getMeCached } from "@/lib/client-me";
-import { formatCurrencyCents } from "@/lib/format";
+import { formatMoneyCents } from "@/lib/format";
 
 interface MePayload {
   userId: string;
@@ -20,7 +20,7 @@ interface StaffDirectoryRow {
   employmentType: "full_time" | "part_time" | "contractor" | null;
   annualSalaryCents: number | null;
   hourlyRateCents: number | null;
-  currency: "USD";
+  currency: "USD" | "PKR";
   updatedAtUtc: string | null;
 }
 
@@ -43,6 +43,7 @@ export default function EmployeesPage() {
     employmentType: "full_time",
     annualSalaryCents: "",
     hourlyRateCents: "",
+    currency: "PKR",
   });
 
   async function load() {
@@ -73,7 +74,7 @@ export default function EmployeesPage() {
           employmentType: null,
           annualSalaryCents: null,
           hourlyRateCents: null,
-          currency: "USD",
+          currency: "PKR",
           updatedAtUtc: null,
         }));
       }
@@ -120,6 +121,10 @@ export default function EmployeesPage() {
       setError("Select a staff member first.");
       return;
     }
+    if (!compForm.annualSalaryCents && !compForm.hourlyRateCents) {
+      setError("Set annual salary or hourly rate before saving compensation.");
+      return;
+    }
 
     setSavingComp(true);
     setError(null);
@@ -132,7 +137,7 @@ export default function EmployeesPage() {
           employmentType: compForm.employmentType,
           annualSalaryCents: compForm.annualSalaryCents ? Number(compForm.annualSalaryCents) : null,
           hourlyRateCents: compForm.hourlyRateCents ? Number(compForm.hourlyRateCents) : null,
-          currency: "USD",
+          currency: compForm.currency,
         }),
       });
       setMessage(`Saved compensation for ${compForm.staffId}.`);
@@ -143,21 +148,45 @@ export default function EmployeesPage() {
     setSavingComp(false);
   }
 
+  const canManage = me?.role === "owner" || me?.role === "hr";
+  const fullTimeCount = rows.filter((row) => row.employmentType === "full_time").length;
+  const contractorCount = rows.filter((row) => row.employmentType === "contractor").length;
+
   return (
-    <ModuleShell title="Employees" description="Manage employee records without login accounts and store salary or contractor rates.">
+    <ModuleShell
+      title="Employee Directory"
+      description="Maintain payroll identities, compensation structure, and staffing records for operating and finance workflows."
+    >
       {error ? <ErrorState message={error} /> : null}
       {message ? <p className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">{message}</p> : null}
       {loading ? <LoadingState label="Loading employees..." /> : null}
 
-      {me && me.role !== "owner" && me.role !== "hr" ? (
+      {me && !canManage ? (
         <ErrorState message="Only owner or hr can manage employee records." />
       ) : null}
 
-      {me && (me.role === "owner" || me.role === "hr") ? (
+      {canManage ? (
+        <section className="grid gap-3 md:grid-cols-3">
+          <div className="card-muted">
+            <p className="text-xs uppercase tracking-[0.12em] text-muted">Total Directory</p>
+            <p className="num mt-2 text-2xl font-semibold text-ink">{rows.length}</p>
+          </div>
+          <div className="card-muted">
+            <p className="text-xs uppercase tracking-[0.12em] text-muted">Full Time</p>
+            <p className="num mt-2 text-2xl font-semibold text-ink">{fullTimeCount}</p>
+          </div>
+          <div className="card-muted">
+            <p className="text-xs uppercase tracking-[0.12em] text-muted">Contractors</p>
+            <p className="num mt-2 text-2xl font-semibold text-ink">{contractorCount}</p>
+          </div>
+        </section>
+      ) : null}
+
+      {canManage ? (
         <section className="grid gap-3 xl:grid-cols-2">
           <form className="card grid gap-3" onSubmit={addEmployee}>
-            <h2 className="text-sm font-semibold text-ink">Add employee (no login)</h2>
-            <p className="text-xs text-muted">Use this for payroll, time tracking, expenses, and reporting identities.</p>
+            <h2 className="text-sm font-semibold text-ink">Add employee record</h2>
+            <p className="text-xs text-muted">Create a staff identity for payroll, time tracking, expenses, and reporting.</p>
             <label className="field">
               <span className="field-label">Employee ID</span>
               <input
@@ -196,7 +225,7 @@ export default function EmployeesPage() {
 
           <form className="card grid gap-3" onSubmit={saveCompensation}>
             <h2 className="text-sm font-semibold text-ink">Set compensation</h2>
-            <p className="text-xs text-muted">Add annual salary or hourly rate. This does not create platform login users.</p>
+            <p className="text-xs text-muted">Set annual salary and hourly rates while keeping login access separate.</p>
             <label className="field">
               <span className="field-label">Employee</span>
               <select
@@ -223,6 +252,17 @@ export default function EmployeesPage() {
                 <option value="full_time">full_time</option>
                 <option value="part_time">part_time</option>
                 <option value="contractor">contractor</option>
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">Currency</span>
+              <select
+                className="select"
+                value={compForm.currency}
+                onChange={(event) => setCompForm({ ...compForm, currency: event.target.value as "USD" | "PKR" })}
+              >
+                <option value="PKR">PKR</option>
+                <option value="USD">USD</option>
               </select>
             </label>
             <label className="field">
@@ -256,41 +296,49 @@ export default function EmployeesPage() {
         </section>
       ) : null}
 
-      <section className="card">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-ink">Employee directory</h2>
-          <button type="button" className="btn-secondary" onClick={() => void load()}>
-            Refresh
-          </button>
-        </div>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Employee</th>
-                <th>External code</th>
-                <th>Type</th>
-                <th>Annual salary</th>
-                <th>Hourly rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.staffId}>
-                  <td>
-                    {row.fullName}
-                    <div className="text-xs text-muted">{row.staffId}</div>
-                  </td>
-                  <td>{row.externalCode ?? "-"}</td>
-                  <td>{row.employmentType ? <StatusBadge status={row.employmentType} /> : "-"}</td>
-                  <td className="num">{row.annualSalaryCents != null ? formatCurrencyCents(row.annualSalaryCents) : "-"}</td>
-                  <td className="num">{row.hourlyRateCents != null ? formatCurrencyCents(row.hourlyRateCents) : "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      {canManage ? (
+        <section className="card">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-ink">Employee directory</h2>
+            <button type="button" className="btn-secondary" onClick={() => void load()}>
+              Refresh
+            </button>
+          </div>
+          {rows.length === 0 ? (
+            <p className="rounded-md border border-border bg-muted p-3 text-sm text-muted">
+              No employees yet. Add your first staff record to unlock payroll and operational tracking.
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Employee</th>
+                    <th>External code</th>
+                    <th>Type</th>
+                    <th>Annual salary</th>
+                    <th>Hourly rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.staffId}>
+                      <td>
+                        {row.fullName}
+                        <div className="text-xs text-muted">{row.staffId}</div>
+                      </td>
+                      <td>{row.externalCode ?? "-"}</td>
+                      <td>{row.employmentType ? <StatusBadge status={row.employmentType} /> : "-"}</td>
+                      <td className="num">{row.annualSalaryCents != null ? formatMoneyCents(row.annualSalaryCents, row.currency) : "-"}</td>
+                      <td className="num">{row.hourlyRateCents != null ? formatMoneyCents(row.hourlyRateCents, row.currency) : "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ) : null}
     </ModuleShell>
   );
 }

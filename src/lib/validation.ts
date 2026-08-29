@@ -3,10 +3,14 @@ import { z } from "zod";
 const isoUtcDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 export const createLeadSchema = z.object({
-  source: z.enum(["referral", "inbound-web", "outbound", "marketplace", "other"]),
-  stage: z.enum(["new", "qualified", "proposal", "won", "lost"]),
+  source: z.enum(["linkedin", "upwork", "gmail", "referral", "inbound-web", "outbound", "marketplace", "other"]),
+  stage: z.enum(["new", "qualified", "proposal", "lost"]),
   valueEstimateCents: z.number().int().min(0).max(100_000_000),
   ownerUserId: z.string().min(1),
+});
+
+export const updateLeadStageSchema = z.object({
+  stage: z.enum(["new", "qualified", "proposal", "won", "lost"]),
 });
 
 export const winDealSchema = z.object({
@@ -30,7 +34,7 @@ export const createTimeEntrySchema = z.object({
 
 export const createExpenseSchema = z.object({
   employeeUserId: z.string().trim().min(1),
-  category: z.enum(["rent", "software", "travel", "other"]),
+  category: z.enum(["rent", "software", "travel", "upwork", "ai_tools", "subscriptions", "other"]),
   amountCents: z.number().int().min(0).max(5_000_000),
   approverUserId: z.string().trim().min(1),
   receiptUrl: z.url(),
@@ -89,6 +93,10 @@ export const updateExpenseStatusSchema = z.object({
   status: z.enum(["submitted", "approved", "reimbursed"]),
 });
 
+export const updateInvoiceStatusSchema = z.object({
+  status: z.enum(["paid"]),
+});
+
 export const createStaffMemberSchema = z.object({
   staffId: z.string().trim().min(1).max(120),
   fullName: z.string().trim().min(1).max(120),
@@ -100,7 +108,7 @@ export const upsertStaffCompensationSchema = z
     employmentType: z.enum(["full_time", "part_time", "contractor"]),
     annualSalaryCents: z.number().int().min(0).max(5_000_000_000).nullable().optional(),
     hourlyRateCents: z.number().int().min(0).max(5_000_000).nullable().optional(),
-    currency: z.literal("USD").default("USD"),
+    currency: z.enum(["USD", "PKR"]).default("PKR"),
   })
   .superRefine((value, ctx) => {
     if (value.annualSalaryCents == null && value.hourlyRateCents == null) {

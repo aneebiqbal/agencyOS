@@ -43,6 +43,12 @@ export default function TimePage() {
     workDateUtc: new Date().toISOString().slice(0, 10),
   });
 
+  const staffById = new Map(staff.map((person) => [person.staffId, person]));
+  const projectById = new Map(projects.map((project) => [project.id, project]));
+  const billableHours = entries.filter((entry) => entry.billable).reduce((sum, entry) => sum + entry.hours, 0);
+  const nonBillableHours = entries.filter((entry) => !entry.billable).reduce((sum, entry) => sum + entry.hours, 0);
+  const canSubmit = Boolean(form.employeeUserId && form.projectId && staff.length > 0 && projects.length > 0);
+
   const refreshData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -115,12 +121,34 @@ export default function TimePage() {
   }
 
   return (
-    <ModuleShell title="Time Tracking" description="Create and review time entries with explicit submit confirmation and idempotency keys.">
+    <ModuleShell title="Time Tracking" description="Capture delivery time accurately and review entries by person, project, and billable status.">
       {error ? <ErrorState message={error} /> : null}
       {loading ? <LoadingState label="Loading time entries..." /> : null}
 
+      <section className="kpi-grid">
+        <div className="card">
+          <p className="text-xs uppercase tracking-[0.1em] text-muted">Recent entries</p>
+          <p className="num mt-2 text-2xl font-semibold text-ink">{entries.length}</p>
+        </div>
+        <div className="card">
+          <p className="text-xs uppercase tracking-[0.1em] text-muted">Billable hours</p>
+          <p className="num mt-2 text-2xl font-semibold text-ink">{formatHours(billableHours)}</p>
+        </div>
+        <div className="card">
+          <p className="text-xs uppercase tracking-[0.1em] text-muted">Non-billable hours</p>
+          <p className="num mt-2 text-2xl font-semibold text-ink">{formatHours(nonBillableHours)}</p>
+        </div>
+      </section>
+
       <section className="card">
         <h3 className="text-sm font-semibold text-ink">Log time entry</h3>
+        <p className="mt-1 text-xs text-muted">Complete all fields so finance and delivery reporting stay clean.</p>
+        {!loading && staff.length === 0 ? (
+          <EmptyState title="No staff members available" guidance="Create a staff member first, then return to log time." />
+        ) : null}
+        {!loading && projects.length === 0 ? (
+          <EmptyState title="No projects available" guidance="Create or convert a project first, then log time against it." />
+        ) : null}
         <form onSubmit={submitTimeEntry} className="mt-3 grid gap-3 md:grid-cols-2">
           <label className="field">
             <span className="field-label">Staff member</span>
@@ -137,6 +165,7 @@ export default function TimePage() {
                 </option>
               ))}
             </select>
+            <span className="text-xs text-muted">Primary assignee for the work completed on this date.</span>
           </label>
           <label className="field">
             <span className="field-label">Project</span>
@@ -153,6 +182,7 @@ export default function TimePage() {
                 </option>
               ))}
             </select>
+            <span className="text-xs text-muted">Pick the exact project where effort should be reported.</span>
           </label>
           <label className="field">
             <span className="field-label">Hours</span>
@@ -166,6 +196,7 @@ export default function TimePage() {
               onChange={(event) => setForm({ ...form, hours: event.target.value })}
               required
             />
+            <span className="text-xs text-muted">Use quarter-hour increments (0.25, 0.5, 1.0, etc.).</span>
           </label>
           <label className="field">
             <span className="field-label">Work date</span>
@@ -176,6 +207,7 @@ export default function TimePage() {
               onChange={(event) => setForm({ ...form, workDateUtc: event.target.value })}
               required
             />
+            <span className="text-xs text-muted">Stored in UTC with a fixed midday timestamp.</span>
           </label>
           <label className="field md:col-span-2">
             <span className="field-label">Work description</span>
@@ -186,6 +218,7 @@ export default function TimePage() {
               onChange={(event) => setForm({ ...form, description: event.target.value })}
               required
             />
+            <span className="text-xs text-muted">Be specific so project managers can approve and invoice quickly.</span>
           </label>
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -195,20 +228,21 @@ export default function TimePage() {
             />
             Billable
           </label>
-          <div>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="btn"
-              >
-                {submitting ? "Submitting..." : "Submit time"}
-              </button>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              disabled={submitting || !canSubmit}
+              className="btn"
+            >
+              {submitting ? "Submitting..." : "Submit time entry"}
+            </button>
           </div>
         </form>
       </section>
 
       <section className="card">
         <h3 className="text-sm font-semibold text-ink">Recent entries</h3>
+        <p className="mt-1 text-xs text-muted">Names are shown first with IDs preserved for audit and API traceability.</p>
         {!loading && entries.length === 0 ? (
           <EmptyState title="No time entries yet" guidance="Submit a time entry above to populate this register." />
         ) : null}
@@ -222,18 +256,26 @@ export default function TimePage() {
                   <th className="pb-2">Project</th>
                   <th className="pb-2">Hours</th>
                   <th className="pb-2">Billable</th>
+                  <th className="pb-2">Description</th>
                 </tr>
               </thead>
               <tbody>
                 {entries.map((entry) => (
                   <tr key={entry.id}>
                     <td className="py-2">{formatDate(entry.workDateUtc)}</td>
-                    <td className="py-2">{entry.employeeUserId}</td>
-                    <td className="py-2">{entry.projectId}</td>
+                    <td className="py-2">
+                      <p>{staffById.get(entry.employeeUserId)?.fullName ?? "Unknown staff"}</p>
+                      <p className="font-mono text-xs text-muted">{entry.employeeUserId}</p>
+                    </td>
+                    <td className="py-2">
+                      <p>{projectById.get(entry.projectId)?.clientName ?? "Unknown project"}</p>
+                      <p className="font-mono text-xs text-muted">{entry.projectId}</p>
+                    </td>
                     <td className="num py-2">{formatHours(entry.hours)}</td>
                     <td className="py-2">
                       <StatusBadge status={entry.billable ? "billable" : "non-billable"} />
                     </td>
+                    <td className="py-2">{entry.description}</td>
                   </tr>
                 ))}
               </tbody>

@@ -4,7 +4,7 @@ create table if not exists app.staff_compensation (
   employment_type text not null check (employment_type in ('full_time', 'part_time', 'contractor')),
   annual_salary_cents bigint,
   hourly_rate_cents bigint,
-  currency text not null default 'USD' check (currency = 'USD'),
+  currency text not null default 'PKR' check (currency in ('USD', 'PKR')),
   updated_at_utc timestamptz not null default now(),
   deleted_at_utc timestamptz,
   primary key (org_id, staff_id),

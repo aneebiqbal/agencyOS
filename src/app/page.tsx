@@ -91,17 +91,41 @@ export default function DashboardPage() {
 
   const pendingExpenses = expenses.filter((item) => item.status === "submitted").length;
   const openLeads = leads.filter((item) => item.stage !== "won" && item.stage !== "lost").length;
+  const activeProjects = projects.filter((project) => project.status === "active").length;
+  const wonLeads = leads.filter((item) => item.stage === "won").length;
 
   return (
     <ModuleShell
-      title="Operations Dashboard"
-      description="Daily control panel for pipeline, delivery, cash position, and operational risk signals."
+      title="Operations Command Center"
+      description="Run daily execution with a clear view of pipeline momentum, delivery load, cash movement, and team activity."
     >
       {error ? <ErrorState message={error} /> : null}
       {loading ? <LoadingState label="Loading dashboard metrics and activity..." /> : null}
 
       {!loading && finance ? (
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="card overflow-hidden bg-gradient-to-r from-slate-50 via-white to-emerald-50">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:items-center">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Monthly Executive Snapshot</p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-ink">{formatCurrencyCents(finance.netMarginCents)} net margin this month</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+                Revenue is at {formatCurrencyCents(finance.revenueInCents)} with payroll and approved operating expenses reflected in real time.
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+              <Link href="/finance" className="btn text-center">
+                Open finance command
+              </Link>
+              <Link href="/expenses" className="btn-secondary text-center">
+                Review expense queue
+              </Link>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {!loading && finance ? (
+        <section className="kpi-grid">
           {[
             ["Revenue (month)", formatCurrencyCents(finance.revenueInCents)],
             ["Payroll cost", formatCurrencyCents(finance.payrollOutCents)],
@@ -119,11 +143,12 @@ export default function DashboardPage() {
       <section className="grid gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <div className="card">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-ink">What needs attention today</h2>
+            <h2 className="text-sm font-semibold text-ink">Priority queue</h2>
             <Link href="/finance" className="text-sm text-accent hover:text-accent-strong">
-              Open finance
+              View full finance feed
             </Link>
           </div>
+          <p className="mt-1 text-xs text-muted">Use this list as your first review pass before assigning workstreams.</p>
           {!loading && leads.length === 0 && projects.length === 0 && expenses.length === 0 ? (
             <EmptyState
               title="No operating data yet"
@@ -132,16 +157,20 @@ export default function DashboardPage() {
           ) : (
             <div className="mt-3 grid gap-2 text-sm">
               <div className="card-muted flex items-center justify-between">
-                <span>Open leads</span>
+                <span>Open leads requiring qualification</span>
                 <span className="num font-semibold">{openLeads}</span>
               </div>
               <div className="card-muted flex items-center justify-between">
-                <span>Pending expenses</span>
+                <span>Submitted expenses awaiting review</span>
                 <span className="num font-semibold">{pendingExpenses}</span>
               </div>
               <div className="card-muted flex items-center justify-between">
-                <span>Active projects</span>
-                <span className="num font-semibold">{projects.filter((p) => p.status === "active").length}</span>
+                <span>Active projects in delivery</span>
+                <span className="num font-semibold">{activeProjects}</span>
+              </div>
+              <div className="card-muted flex items-center justify-between">
+                <span>Won leads ready for kickoff controls</span>
+                <span className="num font-semibold">{wonLeads}</span>
               </div>
             </div>
           )}
@@ -149,6 +178,7 @@ export default function DashboardPage() {
 
         <div className="card">
           <h2 className="text-sm font-semibold text-ink">Recent activity</h2>
+          <p className="mt-1 text-xs text-muted">Immutable audit events from finance, staffing, project, and sales updates.</p>
           {audit.length === 0 ? (
             <EmptyState title="No audit activity yet" guidance="Actions appear here after writes to operational records." />
           ) : (
@@ -165,21 +195,31 @@ export default function DashboardPage() {
       </section>
 
       <section className="card">
-        <h2 className="text-sm font-semibold text-ink">Quick records</h2>
-        <div className="mt-3 grid gap-2 md:grid-cols-2">
-          {projects.slice(0, 6).map((project) => (
-            <Link
-              key={project.id}
-              href="/projects"
-              className="rounded-md border border-border bg-muted px-3 py-2 text-sm hover:bg-white"
-            >
-              <div className="flex items-center justify-between">
-                <span>{project.clientName}</span>
-                <StatusBadge status={project.status} />
-              </div>
-            </Link>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-ink">Project queue preview</h2>
+          <Link href="/projects" className="btn-secondary">
+            Open project workspace
+          </Link>
         </div>
+        {projects.length === 0 ? (
+          <EmptyState title="No projects to display" guidance="Create or convert a lead to start delivery tracking." />
+        ) : (
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {projects.slice(0, 6).map((project) => (
+              <Link
+                key={project.id}
+                href="/projects"
+                className="rounded-md border border-border bg-muted px-3 py-3 text-sm transition hover:-translate-y-0.5 hover:bg-white"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-ink">{project.clientName}</span>
+                  <StatusBadge status={project.status} />
+                </div>
+                <p className="mt-1 text-xs text-muted">Project ID: {project.id}</p>
+              </Link>
+            ))}
+          </div>
+        )}
       </section>
     </ModuleShell>
   );

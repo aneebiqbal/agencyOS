@@ -96,19 +96,30 @@ export function ModuleShell({ title, description, actions, children }: ModuleShe
 
   return (
     <div className="app-bg min-h-screen">
-      <div className="grid w-full gap-4 p-4 lg:grid-cols-[280px_minmax(0,1fr)] lg:p-6">
-        <aside className="card h-fit lg:sticky lg:top-6 lg:self-start">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Agency OS</p>
-            <Link href="/" className="text-xs text-accent hover:text-accent-strong">
-              Home
-            </Link>
+      <div className="mx-auto grid w-full max-w-[1500px] gap-4 p-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-5 lg:p-6">
+        <aside className="card shell-sidebar h-fit lg:sticky lg:top-6 lg:self-start">
+          <div className="shell-brand">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Agency OS</p>
+                <p className="mt-1 text-base font-semibold tracking-tight text-ink">Operations Console</p>
+              </div>
+              <Link href="/" className="btn-secondary px-3 py-1.5 text-[12px]">
+                Home
+              </Link>
+            </div>
+            <p className="mt-3 text-xs leading-5 text-muted">One control plane for revenue, delivery, finance, and people operations.</p>
           </div>
 
-          <div className="mt-3 grid gap-3 lg:gap-4">
+          <div className="hidden rounded-xl border border-border/90 bg-white/70 p-3 lg:block">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Current Module</p>
+            <p className="mt-1 text-sm font-semibold text-ink">{title}</p>
+          </div>
+
+          <div className="grid gap-3 lg:gap-4">
             {NAV_SECTIONS.map((section) => (
               <div key={section.label}>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">{section.label}</p>
+                <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">{section.label}</p>
                 <nav className="flex gap-2 overflow-x-auto pb-1 lg:grid lg:gap-1 lg:overflow-visible lg:pb-0">
                   {section.items.map(([label, href]) => {
                     const active = pathname === href;
@@ -116,13 +127,11 @@ export function ModuleShell({ title, description, actions, children }: ModuleShe
                       <Link
                         key={href}
                         href={href}
-                        className={`whitespace-nowrap rounded-md px-3 py-2 text-sm transition ${
-                          active
-                            ? "bg-primary/12 text-primary shadow-[inset_0_0_0_1px_var(--color-primary-strong)]"
-                            : "text-muted hover:bg-muted"
-                        }`}
+                        className={`shell-nav-link whitespace-nowrap ${active ? "shell-nav-link-active" : ""}`}
+                        aria-current={active ? "page" : undefined}
                       >
-                        {label}
+                        <span>{label}</span>
+                        {active ? <span className="text-[10px] font-semibold uppercase tracking-[0.08em]">On</span> : null}
                       </Link>
                     );
                   })}
@@ -133,34 +142,38 @@ export function ModuleShell({ title, description, actions, children }: ModuleShe
         </aside>
 
         <main className="grid min-w-0 gap-4">
-          <section className="card flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <section className="card flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
-              <h1 className="text-[24px] font-semibold tracking-tight text-ink">{title}</h1>
-              <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">{description}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Module Overview</p>
+              <h1 className="mt-1 text-[28px] font-semibold leading-tight tracking-[-0.02em] text-ink">{title}</h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">{description}</p>
             </div>
-            <div className="flex flex-col items-start gap-3 md:items-end">
+            <div className="flex w-full flex-col items-start gap-3 md:w-auto md:items-end">
               <SessionControls />
               {actions ?? null}
             </div>
           </section>
 
-          <section className="grid gap-3 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+          <section className="grid gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
             <div className="card-muted">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Playbook</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Playbook</p>
               <h2 className="mt-1 text-base font-semibold text-ink">{playbook.title}</h2>
-              <ol className="mt-2 grid gap-1 text-sm text-muted">
+              <ol className="mt-3 grid gap-2 text-sm text-muted">
                 {playbook.steps.map((step, index) => (
-                  <li key={step}>
-                    <span className="mr-2 num text-xs text-ink">0{index + 1}</span>
-                    {step}
+                  <li key={step} className="flex items-start gap-2">
+                    <span className="num mt-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-border bg-white px-1 text-[11px] font-semibold text-ink">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span className="leading-5">{step}</span>
                   </li>
                 ))}
               </ol>
             </div>
 
             <div className="card-muted">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Quick Actions</p>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Quick Actions</p>
+              <p className="mt-1 text-sm text-muted">Jump directly into key workstreams for this module.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
                 {playbook.actions.map((actionItem) => (
                   <Link key={actionItem.href + actionItem.label} href={actionItem.href} className="btn-secondary">
                     {actionItem.label}

@@ -4,6 +4,18 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
+const usdFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
+const pkrFormatter = new Intl.NumberFormat("en-PK", {
+  style: "currency",
+  currency: "PKR",
+  maximumFractionDigits: 0,
+});
+
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "2-digit",
@@ -20,6 +32,11 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
 
 export function formatCurrencyCents(value: number): string {
   return currencyFormatter.format(value / 100);
+}
+
+export function formatMoneyCents(value: number, currency: "USD" | "PKR"): string {
+  const formatter = currency === "PKR" ? pkrFormatter : usdFormatter;
+  return formatter.format(value / 100);
 }
 
 export function formatDate(isoUtc: string): string {

@@ -42,6 +42,11 @@ export default function ProfilePage() {
 
   async function saveProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const nextDisplayName = displayName.trim();
+    if (!nextDisplayName) {
+      setMessage("Enter a display name to update your profile.");
+      return;
+    }
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -49,7 +54,7 @@ export default function ProfilePage() {
       await authJson("/api/profile", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ displayName }),
+        body: JSON.stringify({ displayName: nextDisplayName }),
       });
       setMessage("Profile updated.");
     } catch (cause) {
@@ -59,28 +64,42 @@ export default function ProfilePage() {
   }
 
   return (
-    <ModuleShell title="Profile" description="Manage your operator profile and identity details.">
+    <ModuleShell
+      title="Profile & Identity"
+      description="Keep your operator identity current for audit clarity, approvals, and cross-team accountability."
+    >
       {error ? <ErrorState message={error} /> : null}
       {loading ? <LoadingState label="Loading profile..." /> : null}
       {message ? <p className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">{message}</p> : null}
 
       {me ? (
         <section className="grid gap-3 xl:grid-cols-2">
-          <div className="card space-y-2 text-sm">
-            <h2 className="text-sm font-semibold text-ink">Identity</h2>
-            <p>
-              <span className="text-muted">User ID:</span> <span className="font-mono text-xs">{me.userId}</span>
-            </p>
-            <p>
-              <span className="text-muted">Organization:</span> {me.orgId}
-            </p>
-            <p className="flex items-center gap-2">
-              <span className="text-muted">Role:</span> <StatusBadge status={me.role} />
+          <div className="card space-y-3 text-sm">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Account Context</p>
+              <h2 className="mt-1 text-base font-semibold text-ink">Current operator identity</h2>
+            </div>
+            <div className="card-muted space-y-2">
+              <p>
+                <span className="text-muted">User ID:</span> <span className="font-mono text-xs text-ink">{me.userId}</span>
+              </p>
+              <p>
+                <span className="text-muted">Organization:</span> <span className="num text-ink">{me.orgId}</span>
+              </p>
+              <p className="flex items-center gap-2">
+                <span className="text-muted">Role:</span> <StatusBadge status={me.role} />
+              </p>
+            </div>
+            <p className="text-xs leading-5 text-muted">
+              This identity is attached to write actions in operational modules. Keep profile details accurate for reliable audit traceability.
             </p>
           </div>
 
           <form className="card grid gap-3" onSubmit={saveProfile}>
-            <h2 className="text-sm font-semibold text-ink">Display name</h2>
+            <div>
+              <h2 className="text-sm font-semibold text-ink">Public display name</h2>
+              <p className="mt-1 text-xs text-muted">Shown in collaboration and approval views when available.</p>
+            </div>
             <label className="field">
               <span className="field-label">Display name</span>
               <input
@@ -90,7 +109,8 @@ export default function ProfilePage() {
                 placeholder="Jane Doe"
               />
             </label>
-            <div>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-muted">Display name is required when saving this form.</p>
               <button type="submit" className="btn" disabled={saving}>
                 {saving ? "Saving..." : "Save profile"}
               </button>

@@ -69,30 +69,43 @@ export function SessionControls() {
   }
 
   if (loading) {
-    return <div className="text-sm text-zinc-500">Session: checking...</div>;
+    return (
+      <div className="surface-status w-full md:w-auto" role="status" aria-live="polite" aria-busy="true">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Session</p>
+        <p className="mt-1 text-sm font-medium text-ink">Checking authentication...</p>
+      </div>
+    );
   }
 
   if (!userLabel) {
     return (
-      <Link href="/login" className="text-sm font-medium text-accent hover:text-accent-strong">
-        Sign in
-      </Link>
+      <div className="surface-status w-full md:w-auto">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Session</p>
+        <div className="mt-2">
+          <Link href="/login" className="btn inline-flex items-center">
+            Sign in
+          </Link>
+        </div>
+      </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-3">
-      <span className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-slate-700">
-        {userLabel}
-      </span>
-      <button
-        type="button"
-        onClick={signOut}
-        disabled={signingOut}
-        className="btn-secondary"
-      >
-        {signingOut ? "Signing out..." : "Sign out"}
-      </button>
+    <div className="surface-status w-full md:w-auto">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Active Session</p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="status-badge status-info text-[11px]">
+          {userLabel}
+        </span>
+        <button
+          type="button"
+          onClick={signOut}
+          disabled={signingOut}
+          className="btn-secondary"
+        >
+          {signingOut ? "Signing out..." : "Sign out"}
+        </button>
+      </div>
     </div>
   );
 }
