@@ -11,6 +11,7 @@ import { calculateInvoiceTotals } from "@/lib/domain/invoice";
 import type {
   AuditLogEntry,
   Deal,
+  EmploymentType,
   Expense,
   Invoice,
   InvoiceLineItem,
@@ -19,6 +20,7 @@ import type {
   PerformanceSnapshot,
   Project,
   SessionUser,
+  StaffDirectoryRecord,
   TimeEntry,
 } from "@/lib/domain/types";
 import { createExpense as createExpenseMemory } from "@/lib/services/expenses";
@@ -271,6 +273,18 @@ export async function createLead(
   return lead;
 }
 
+export async function listDeals(actor: SessionUser): Promise<Deal[]> {
+  if (!isPostgresConfigured()) {
+    return memoryStore.getState().deals.filter((deal) => deal.deletedAtUtc === null);
+  }
+
+  const rows = await queryAsActor(
+    actorWithOrg(actor),
+    "select * from app.deals where deleted_at_utc is null order by created_at_utc desc",
+  );
+  return rows.map((row) => mapDealRow(row));
+}
+
 export async function listProjects(actor: SessionUser): Promise<Project[]> {
   if (!isPostgresConfigured()) {
     return listProjectsMemory(memoryStore);
@@ -314,6 +328,21 @@ export async function isProjectMember(
     [projectId, userId],
   );
   return rows.length > 0;
+}
+
+export async function listProjectMemberUserIds(actor: SessionUser, projectId: string): Promise<string[]> {
+  if (!isPostgresConfigured()) {
+    return memoryStore
+      .getState()
+      .projectMembers.filter((item) => item.projectId === projectId)
+      .map((item) => item.userId);
+  }
+  const rows = await queryAsActor(
+    actorWithOrg(actor),
+    "select user_id from app.project_members where project_id = $1 and deleted_at_utc is null order by user_id asc",
+    [projectId],
+  );
+  return rows.map((row) => String(row.user_id));
 }
 
 export async function updateProjectBudget(
@@ -464,6 +493,21 @@ export async function createTimeEntry(
   });
 }
 
+export async function listTimeEntries(actor: SessionUser): Promise<TimeEntry[]> {
+  if (!isPostgresConfigured()) {
+    return memoryStore
+      .getState()
+      .timeEntries.filter((entry) => entry.deletedAtUtc === null)
+      .sort((a, b) => Date.parse(b.workDateUtc) - Date.parse(a.workDateUtc));
+  }
+
+  const rows = await queryAsActor(
+    actorWithOrg(actor),
+    "select * from app.time_entries where deleted_at_utc is null order by work_date_utc desc, created_at_utc desc",
+  );
+  return rows.map((row) => mapTimeEntryRow(row));
+}
+
 export async function createExpense(
   actor: SessionUser,
   input: Omit<Expense, "id" | "status" | "createdAtUtc" | "deletedAtUtc">,
@@ -501,6 +545,60 @@ export async function createExpense(
     const body = { ok: true, data: created };
     await storeIdempotentResponse(client, ctx, "/api/expenses", idempotencyKey, 201, body);
     return { status: 201, body, created };
+  });
+}
+
+export async function listExpenses(actor: SessionUser): Promise<Expense[]> {
+  if (!isPostgresConfigured()) {
+    return memoryStore
+      .getState()
+      .expenses.filter((expense) => expense.deletedAtUtc === null)
+      .sort((a, b) => Date.parse(b.incurredAtUtc) - Date.parse(a.incurredAtUtc));
+  }
+
+  const rows = await queryAsActor(
+    actorWithOrg(actor),
+    "select * from app.expenses where deleted_at_utc is null order by incurred_at_utc desc, created_at_utc desc",
+  );
+  return rows.map((row) => mapExpenseRow(row));
+}
+
+export async function updateExpenseStatus(
+  actor: SessionUser,
+  expenseId: string,
+  nextStatus: Expense["status"],
+): Promise<Expense> {
+  if (!isPostgresConfigured()) {
+    const updated = memoryStore.transaction((state) => {
+      const match = state.expenses.find((expense) => expense.id === expenseId && expense.deletedAtUtc === null);
+      if (!match) {
+        throw notFound("Expense not found.");
+      }
+      match.status = nextStatus;
+      return structuredClone(match);
+    });
+    memoryStore.appendAuditLog(actor, "expense.status.update", "expense", expenseId, null, updated);
+    return updated;
+  }
+
+  const ctx = actorWithOrg(actor);
+  return transactionAsActor(ctx, async (client) => {
+    const beforeRows = await client.query(
+      "select * from app.expenses where org_id = $1 and id = $2 and deleted_at_utc is null for update",
+      [ctx.orgId, expenseId],
+    );
+    if (beforeRows.rowCount === 0) {
+      throw notFound("Expense not found.");
+    }
+
+    const before = mapExpenseRow(beforeRows.rows[0]);
+    const updatedRows = await client.query(
+      "update app.expenses set status = $3 where org_id = $1 and id = $2 returning *",
+      [ctx.orgId, expenseId, nextStatus],
+    );
+    const updated = mapExpenseRow(updatedRows.rows[0]);
+    await appendAuditLog(client, ctx, "expense.status.update", "expense", expenseId, before, updated);
+    return updated;
   });
 }
 
@@ -620,6 +718,94 @@ export async function generateInvoiceFromProjectTime(
 
     const invoice = mapInvoiceRow(finalInvoiceRows.rows[0], mappedItems);
     return { invoice, sendQueued, sendError };
+  });
+}
+
+export async function listInvoices(actor: SessionUser): Promise<Invoice[]> {
+  if (!isPostgresConfigured()) {
+    return memoryStore
+      .getState()
+      .invoices.filter((invoice) => invoice.deletedAtUtc === null)
+      .sort((a, b) => Date.parse(b.issuedAtUtc) - Date.parse(a.issuedAtUtc));
+  }
+
+  const ctx = actorWithOrg(actor);
+  const rows = await queryAsActor(
+    ctx,
+    "select * from app.invoices where deleted_at_utc is null order by issued_at_utc desc",
+  );
+  const invoices: Invoice[] = [];
+  for (const row of rows) {
+    const lineRows = await queryAsActor(
+      ctx,
+      "select description, quantity, unit_amount_cents, line_total_cents from app.invoice_line_items where invoice_id = $1 and deleted_at_utc is null order by id asc",
+      [String(row.id)],
+    );
+    const lineItems: InvoiceLineItem[] = lineRows.map((line) => ({
+      description: String(line.description),
+      quantity: Number(line.quantity),
+      unitAmountCents: Number(line.unit_amount_cents),
+      lineTotalCents: Number(line.line_total_cents),
+    }));
+    invoices.push(mapInvoiceRow(row, lineItems));
+  }
+  return invoices;
+}
+
+export async function retryInvoiceSend(actor: SessionUser, invoiceId: string): Promise<Invoice> {
+  if (!isPostgresConfigured()) {
+    const updated = memoryStore.transaction((state) => {
+      const match = state.invoices.find((invoice) => invoice.id === invoiceId && invoice.deletedAtUtc === null);
+      if (!match) {
+        throw notFound("Invoice not found.");
+      }
+      if (match.status !== "send_failed") {
+        throw badRequest("Only send_failed invoices can be retried.");
+      }
+
+      match.status = "sent";
+      match.sendAttempts += 1;
+      match.lastSendError = null;
+      return structuredClone(match);
+    });
+    memoryStore.appendAuditLog(actor, "invoice.send.retry", "invoice", invoiceId, null, updated);
+    return updated;
+  }
+
+  const ctx = actorWithOrg(actor);
+  return transactionAsActor(ctx, async (client) => {
+    const beforeRows = await client.query(
+      "select * from app.invoices where org_id = $1 and id = $2 and deleted_at_utc is null for update",
+      [ctx.orgId, invoiceId],
+    );
+    if (beforeRows.rowCount === 0) {
+      throw notFound("Invoice not found.");
+    }
+    if (String(beforeRows.rows[0].status) !== "send_failed") {
+      throw badRequest("Only send_failed invoices can be retried.");
+    }
+
+    const updatedRows = await client.query(
+      `update app.invoices
+          set status = 'sent', send_attempts = send_attempts + 1, last_send_error = null
+        where org_id = $1 and id = $2
+        returning *`,
+      [ctx.orgId, invoiceId],
+    );
+
+    const lineRows = await client.query(
+      "select description, quantity, unit_amount_cents, line_total_cents from app.invoice_line_items where org_id = $1 and invoice_id = $2 and deleted_at_utc is null order by id asc",
+      [ctx.orgId, invoiceId],
+    );
+    const lineItems: InvoiceLineItem[] = lineRows.rows.map((line) => ({
+      description: String(line.description),
+      quantity: Number(line.quantity),
+      unitAmountCents: Number(line.unit_amount_cents),
+      lineTotalCents: Number(line.line_total_cents),
+    }));
+    const updated = mapInvoiceRow(updatedRows.rows[0], lineItems);
+    await appendAuditLog(client, ctx, "invoice.send.retry", "invoice", invoiceId, beforeRows.rows[0], updatedRows.rows[0]);
+    return updated;
   });
 }
 
@@ -789,6 +975,28 @@ export async function acknowledgeConfidentiality(
   });
 }
 
+export async function publishConfidentialityNotice(
+  actor: SessionUser,
+  version: string,
+  noticeText: string,
+): Promise<void> {
+  if (!isPostgresConfigured()) {
+    return;
+  }
+
+  await transactionAsActor(actorWithOrg(actor), async (client) => {
+    await client.query(
+      `insert into app.confidentiality_notice_versions (version, notice_text, deleted_at_utc)
+       values ($1, $2, null)`,
+      [version, noticeText],
+    );
+
+    await appendAuditLog(client, actorWithOrg(actor), "confidentiality.notice.publish", "notice", version, null, {
+      version,
+    });
+  });
+}
+
 export async function logSensitiveView(
   actor: SessionUser,
   viewKey: string,
@@ -849,6 +1057,129 @@ export async function listStaffMembers(
     "select staff_id, full_name from app.staff_members where deleted_at_utc is null order by full_name asc",
   );
   return rows.map((row) => ({ staffId: String(row.staff_id), fullName: String(row.full_name) }));
+}
+
+export async function listStaffDirectory(actor: SessionUser): Promise<StaffDirectoryRecord[]> {
+  if (!isPostgresConfigured()) {
+    return [
+      {
+        staffId: "staff-1",
+        fullName: "Jordan Lee",
+        externalCode: "E-1001",
+        employmentType: "full_time",
+        annualSalaryCents: 16000000,
+        hourlyRateCents: null,
+        currency: "USD",
+        updatedAtUtc: new Date().toISOString(),
+      },
+      {
+        staffId: "staff-2",
+        fullName: "Avery Stone",
+        externalCode: "E-1002",
+        employmentType: "contractor",
+        annualSalaryCents: null,
+        hourlyRateCents: 11000,
+        currency: "USD",
+        updatedAtUtc: new Date().toISOString(),
+      },
+    ];
+  }
+
+  const rows = await queryAsActor(
+    actorWithOrg(actor),
+    `select
+       s.staff_id,
+       s.full_name,
+       s.external_code,
+       c.employment_type,
+       c.annual_salary_cents,
+       c.hourly_rate_cents,
+       c.currency,
+       c.updated_at_utc
+      from app.staff_members s
+      left join app.staff_compensation c
+        on c.org_id = s.org_id and c.staff_id = s.staff_id and c.deleted_at_utc is null
+      where s.org_id = $1 and s.deleted_at_utc is null
+      order by s.full_name asc`,
+    [actor.orgId],
+  );
+
+  return rows.map((row) => ({
+    staffId: String(row.staff_id),
+    fullName: String(row.full_name),
+    externalCode: row.external_code ? String(row.external_code) : null,
+    employmentType: row.employment_type ? (String(row.employment_type) as EmploymentType) : null,
+    annualSalaryCents: row.annual_salary_cents != null ? Number(row.annual_salary_cents) : null,
+    hourlyRateCents: row.hourly_rate_cents != null ? Number(row.hourly_rate_cents) : null,
+    currency: "USD",
+    updatedAtUtc: row.updated_at_utc ? asIso(row.updated_at_utc as string) : null,
+  }));
+}
+
+export async function createStaffMember(
+  actor: SessionUser,
+  input: { staffId: string; fullName: string; externalCode?: string },
+): Promise<{ staffId: string; fullName: string; externalCode: string | null }> {
+  if (!isPostgresConfigured()) {
+    return {
+      staffId: input.staffId,
+      fullName: input.fullName,
+      externalCode: input.externalCode ?? null,
+    };
+  }
+
+  const existing = await queryAsActor(
+    actorWithOrg(actor),
+    "select staff_id from app.staff_members where org_id = $1 and staff_id = $2 and deleted_at_utc is null limit 1",
+    [actor.orgId, input.staffId],
+  );
+  if (existing.length > 0) {
+    throw conflict("Staff member already exists.");
+  }
+
+  await queryAsActor(
+    actorWithOrg(actor),
+    `insert into app.staff_members (org_id, staff_id, full_name, external_code, deleted_at_utc)
+     values ($1, $2, $3, $4, null)`,
+    [actor.orgId, input.staffId, input.fullName, input.externalCode ?? null],
+  );
+
+  return {
+    staffId: input.staffId,
+    fullName: input.fullName,
+    externalCode: input.externalCode ?? null,
+  };
+}
+
+export async function upsertStaffCompensation(
+  actor: SessionUser,
+  staffId: string,
+  input: {
+    employmentType: EmploymentType;
+    annualSalaryCents: number | null;
+    hourlyRateCents: number | null;
+    currency: "USD";
+  },
+): Promise<void> {
+  if (!isPostgresConfigured()) {
+    return;
+  }
+
+  await queryAsActor(
+    actorWithOrg(actor),
+    `insert into app.staff_compensation
+      (org_id, staff_id, employment_type, annual_salary_cents, hourly_rate_cents, currency, updated_at_utc, deleted_at_utc)
+     values ($1, $2, $3, $4, $5, $6, now(), null)
+     on conflict (org_id, staff_id)
+     do update set
+       employment_type = excluded.employment_type,
+       annual_salary_cents = excluded.annual_salary_cents,
+       hourly_rate_cents = excluded.hourly_rate_cents,
+       currency = excluded.currency,
+       updated_at_utc = now(),
+       deleted_at_utc = null`,
+    [actor.orgId, staffId, input.employmentType, input.annualSalaryCents, input.hourlyRateCents, input.currency],
+  );
 }
 
 export async function listProjectNames(actor: SessionUser): Promise<string[]> {
