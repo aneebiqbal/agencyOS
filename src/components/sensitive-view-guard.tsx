@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { authFetch } from "@/lib/client-api";
 
 const REAUTH_MS = 5 * 60 * 1000;
 
@@ -29,11 +30,7 @@ export function SensitiveViewGuard() {
   }, []);
 
   async function reauthenticate() {
-    const token = window.sessionStorage.getItem("agency_access_token");
-    if (!token) {
-      return;
-    }
-    const response = await fetch("/api/me", { headers: { authorization: `Bearer ${token}` } });
+    const response = await authFetch("/api/me");
     if (response.ok) {
       setLocked(false);
       window.setTimeout(() => setLocked(true), REAUTH_MS);
