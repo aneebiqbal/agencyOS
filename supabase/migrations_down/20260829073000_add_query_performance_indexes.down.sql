@@ -1,0 +1,12 @@
+drop index if exists app.audit_org_active_time_idx;
+drop index if exists app.performance_org_active_period_idx;
+drop index if exists app.payroll_runs_org_active_period_idx;
+drop index if exists app.invoices_org_active_issued_idx;
+drop index if exists app.expenses_org_active_incurred_idx;
+drop index if exists app.time_entries_org_active_work_idx;
+drop index if exists app.project_members_org_project_active_idx;
+drop index if exists app.projects_org_active_created_idx;
+drop index if exists app.deals_org_active_created_idx;
+drop index if exists app.leads_org_active_created_idx;
+drop index if exists app.staff_members_org_active_name_idx;
+drop index if exists app.employees_user_active_idx;

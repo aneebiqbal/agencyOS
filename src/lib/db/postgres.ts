@@ -24,6 +24,11 @@ function getPool(): Pool {
     max: Number(process.env.PG_POOL_MAX ?? 5),
     idleTimeoutMillis: 20_000,
     connectionTimeoutMillis: 10_000,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
+    statement_timeout: Number(process.env.PG_STATEMENT_TIMEOUT_MS ?? 15_000),
+    query_timeout: Number(process.env.PG_QUERY_TIMEOUT_MS ?? 20_000),
+    application_name: process.env.PG_APP_NAME ?? "agencyos-app",
     allowExitOnIdle: process.env.NODE_ENV === "test",
   });
 
@@ -32,9 +37,10 @@ function getPool(): Pool {
 
 async function setSessionContext(client: PoolClient, actor: DbActorContext): Promise<void> {
   await client.query("set local role agency_app_role");
-  await client.query("select set_config('app.current_user_id', $1, true)", [actor.userId]);
-  await client.query("select set_config('app.current_user_role', $1, true)", [actor.role]);
-  await client.query("select set_config('app.current_org_id', $1, true)", [actor.orgId]);
+  await client.query(
+    "select set_config('app.current_user_id', $1, true), set_config('app.current_user_role', $2, true), set_config('app.current_org_id', $3, true)",
+    [actor.userId, actor.role, actor.orgId],
+  );
 }
 
 export async function queryAsActor<T extends QueryResultRow>(
